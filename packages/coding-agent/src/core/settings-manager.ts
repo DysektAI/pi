@@ -1,5 +1,6 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Transport } from "@earendil-works/pi-ai";
+import type { CodeBlockBorderStyle } from "@earendil-works/pi-tui";
 import { randomUUID } from "crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
@@ -53,6 +54,7 @@ export interface ThinkingBudgetsSettings {
 
 export interface MarkdownSettings {
 	codeBlockIndent?: string; // default: "  "
+	codeBlockBorderStyle?: CodeBlockBorderStyle; // default: "fence"
 }
 
 export interface WarningSettings {
@@ -1220,6 +1222,10 @@ export class SettingsManager {
 
 	getCodeBlockIndent(): string {
 		return this.settings.markdown?.codeBlockIndent ?? "  ";
+	}
+
+	getCodeBlockBorderStyle(): CodeBlockBorderStyle {
+		return this.settings.markdown?.codeBlockBorderStyle ?? "fence";
 	}
 
 	getWarnings(): WarningSettings {
