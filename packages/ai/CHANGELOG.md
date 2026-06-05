@@ -7,6 +7,7 @@
 ### Fixed
 
 - Fixed Claude Fable 5 thinking-off requests to omit Anthropic's unsupported `thinking.type: "disabled"` payload ([#5567](https://github.com/earendil-works/pi/pull/5567) by [@tmustier](https://github.com/tmustier)).
+- Fixed `getOAuthApiKey` discarding the original error when token refresh fails; now includes the cause message and preserves the error chain.
 
 ## [0.79.1] - 2026-06-09
 
