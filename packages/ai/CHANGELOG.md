@@ -11,6 +11,7 @@
 
 - Fixed OpenRouter model context windows to use the top provider's actual context length ([#6481](https://github.com/earendil-works/pi-mono/pull/6481) by [@davidbrai](https://github.com/davidbrai)).
 - Fixed Amazon Bedrock requests to use the generic `apiKey` stream option as a Bedrock bearer token.
+- Fixed `getOAuthApiKey` discarding the original error when token refresh fails; now includes the cause message and preserves the error chain.
 
 ## [0.80.6] - 2026-07-09
 
