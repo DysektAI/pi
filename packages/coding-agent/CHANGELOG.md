@@ -6,6 +6,7 @@
 
 - Added project trust gating for project-local settings, resources, instructions, and packages ([#5332](https://github.com/earendil-works/pi/pull/5332)).
 - Added the latest prompt cache hit rate to the interactive footer.
+- Added an optional `toolPath` theme token that controls the color of file paths in built-in file tool titles (read/edit/write/grep/find/ls). Falls back to `accent` when a theme omits it, so existing themes render unchanged. See [Color Tokens](docs/themes.md#color-tokens).
 
 ### Fixed
 
