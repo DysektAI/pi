@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Changed `createEventBus` to accept an optional `onError` callback and write to stderr instead of using `console.error` (which corrupts TUI output).
+- Changed `initTheme` to return `{ fallback?: string }` so callers can detect and report theme load failures instead of silently falling back.
+
+### Fixed
+
+- Fixed `execCommand` swallowing the error message when process termination fails; the error is now surfaced in stderr.
+- Fixed `writeRawStdout` exiting without logging the cause; fatal stdout write errors now write a diagnostic to stderr before exit.
+- Fixed extension command and skill expansion error reports missing stack traces.
+
 ### Added
 
 - Added an experimental first-time setup flow behind `PI_EXPERIMENTAL=1` that asks for a dark/light theme choice (preselecting the detected appearance) and opt-in analytics data sharing on first launch with the default agent directory; opting in stores a `trackingId` in `settings.json`.
