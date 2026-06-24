@@ -13,6 +13,7 @@
 - Added cache-friendly dynamic tool loading for extension tools activated by tool results. Supported Anthropic and OpenAI Responses models load definitions where they become available, preserving the cached prompt prefix. See [Dynamic Tool Loading](docs/extensions.md#dynamic-tool-loading) ([#6474](https://github.com/earendil-works/pi-mono/pull/6474)).
 - Added inherited native `xhigh` and `max` thinking levels for Claude Fable 5 across all generated provider catalogs ([#6490](https://github.com/earendil-works/pi-mono/pull/6490) by [@davidbrai](https://github.com/davidbrai)).
 - Added `Ctrl+X` to copy the last assistant message, or the selected message in `/tree`.
+- Added an `auto-title` example extension: names sessions automatically from the whole transcript on a widening cadence (1, 2, 4, 8…) so titles broaden then settle; `/title`, `/titles on|off`, Ctrl+Shift+T, and a `titles` toggle registered into `/config`.
 
 ### Fixed
 
