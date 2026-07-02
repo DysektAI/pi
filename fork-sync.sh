@@ -516,6 +516,11 @@ for b in "${LOCAL_MERGE_BRANCHES[@]}"; do
 done
 
 if [[ "$DO_TEST" -eq 1 ]]; then
+	if [[ "${FORK_SYNC_NPM_CI:-0}" == "1" ]]; then
+		say "Installing dependencies"
+		npm ci --ignore-scripts --no-audit --no-fund
+	fi
+
 	say "Building (sequential, single-process per package)"
 	npm run build
 
