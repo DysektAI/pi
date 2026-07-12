@@ -86,8 +86,10 @@ MANIFEST_IS_TEMP=0
 # rebuild_dependent_branches() because each has a different shape (cherry-pick
 # vs merge). The manifest records their topology via "stackedOn":
 #   markdown-path-linkify   stacks on theme-toolpath-color
-#   footer-thinking-color   stacks on max-thinking
-#   theme-missing-token     needs max-thinking + toolpath
+#   footer-thinking-color   single commit on main (was stacked on max-thinking;
+#                          upstream absorbed max-thinking into main)
+#   theme-missing-token     single commit on theme-toolpath-color (was stacked on
+#                          max-thinking + toolpath; max-thinking absorbed upstream)
 
 # Cap test workers so the runner cannot storm the host (see feat/test-bounded-pool).
 export VITEST_MAX_FORKS="${VITEST_MAX_FORKS:-4}"
@@ -366,12 +368,12 @@ rebuild_dependent_branches() {
 		push_lease fix/vscode-terminal-paths
 	fi
 
-	# footer-thinking-level-color: single commit on top of max-thinking.
-	if needs_rebuild feat/footer-thinking-level-color feat/max-thinking-level; then
-		say "Rebuilding feat/footer-thinking-level-color on feat/max-thinking-level"
+	# footer-thinking-level-color: single commit on main (max-thinking absorbed upstream).
+	if needs_rebuild feat/footer-thinking-level-color main; then
+		say "Rebuilding feat/footer-thinking-level-color on main"
 		local footer_commit
 		footer_commit="$(git log --format=%H -1 "${BACKUP_PREFIX}/feat-footer-thinking-level-color")"
-		git switch -C feat/footer-thinking-level-color feat/max-thinking-level -q
+		git switch -C feat/footer-thinking-level-color main -q
 		if ! git cherry-pick "$footer_commit"; then
 			# Upstream footer changes recur in footer.ts/footer-width.test.ts; let
 			# rerere resolve the import/stat union and continue instead of aborting.
@@ -390,22 +392,15 @@ rebuild_dependent_branches() {
 		push_lease feat/footer-thinking-level-color
 	fi
 
-	# theme-missing-token-warning: needs both token features, then 1 commit.
-	if needs_rebuild feat/theme-missing-token-warning feat/max-thinking-level feat/theme-toolpath-color; then
-		say "Rebuilding feat/theme-missing-token-warning on max-thinking + toolpath"
+	# theme-missing-token-warning: single commit on theme-toolpath-color (max-thinking
+	# absorbed upstream, so no merge needed — toolpath sits on main which has max-thinking).
+	if needs_rebuild feat/theme-missing-token-warning feat/theme-toolpath-color; then
+		say "Rebuilding feat/theme-missing-token-warning on feat/theme-toolpath-color"
 		local warn_commit
 		warn_commit="$(git log --format=%H -1 "${BACKUP_PREFIX}/feat-theme-missing-token-warning")"
-		git switch -C feat/theme-missing-token-warning feat/max-thinking-level -q
-		if ! git merge --no-ff feat/theme-toolpath-color \
-			-m "merge: combine max-thinking and toolpath as the optional-token base"; then
-			warn "theme.ts token-union conflict expected; resolving automatically."
-			resolve_theme_token_union || die "Could not auto-resolve theme.ts; resolve manually."
-			# Complete the merge commit (rerere/our resolver has staged the result).
-			git commit --no-verify -q --no-edit || \
-				die "Merge resolution staged but commit failed; resolve manually."
-		fi
+		git switch -C feat/theme-missing-token-warning feat/theme-toolpath-color -q
 		if ! git cherry-pick "$warn_commit"; then
-			# The warn commit can re-touch theme.ts; let rerere/our resolver handle it.
+			# The warn commit can touch theme.ts; let rerere/our resolver handle it.
 			if resolve_theme_token_union; then
 				git cherry-pick --continue --no-edit || \
 					die "Cherry-pick resolution staged but continue failed; resolve manually."

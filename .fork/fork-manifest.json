@@ -45,18 +45,6 @@
       }
     },
     {
-      "branch": "feat/max-thinking-level",
-      "summary": "Adds 'max' thinking level across providers and UI.",
-      "base": "main",
-      "mergeIntoLocal": false,
-      "drift": {
-        "type": "grep-absent",
-        "ref": "upstream/main",
-        "file": "packages/ai/src/types.ts",
-        "pattern": "\"xhigh\" | \"max\""
-      }
-    },
-    {
       "branch": "feat/markdown-codeblock-border-style",
       "summary": "Configurable code block border styles in the TUI markdown renderer.",
       "base": "main",
@@ -96,8 +84,7 @@
     {
       "branch": "feat/footer-thinking-level-color",
       "summary": "Color the footer thinking-level indicator per level.",
-      "base": "feat/max-thinking-level",
-      "stackedOn": "feat/max-thinking-level",
+      "base": "main",
       "mergeIntoLocal": true,
       "drift": {
         "type": "grep-absent",
@@ -109,9 +96,8 @@
     {
       "branch": "feat/theme-missing-token-warning",
       "summary": "Warn when a custom theme omits optional color tokens.",
-      "base": "feat/max-thinking-level",
+      "base": "feat/theme-toolpath-color",
       "stackedOn": [
-        "feat/max-thinking-level",
         "feat/theme-toolpath-color"
       ],
       "mergeIntoLocal": true,
