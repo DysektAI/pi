@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Changed `createEventBus` to accept an optional `onError` callback and write to stderr instead of using `console.error` (which corrupts TUI output).
+- Changed `initTheme` to return `{ fallback?: string }` so callers can detect and report theme load failures instead of silently falling back.
+
 ### New Features
 
 - **Cache-friendly dynamic tool loading** - Extensions can add tools during execution while supported Anthropic and OpenAI Responses models preserve prompt-cache prefixes. See [Dynamic Tool Loading](docs/extensions.md#dynamic-tool-loading).
@@ -23,6 +28,9 @@
 - Fixed inherited OpenRouter model context windows to use the top provider's actual context length ([#6481](https://github.com/earendil-works/pi-mono/pull/6481) by [@davidbrai](https://github.com/davidbrai)).
 - Fixed `Ctrl+V` to paste clipboard text when the pasteboard does not contain an image.
 - Fixed `/login amazon-bedrock` to prompt for and save a Bedrock API key instead of only displaying ambient AWS credential setup instructions.
+- Fixed `execCommand` swallowing the error message when process termination fails; the error is now surfaced in stderr.
+- Fixed `writeRawStdout` exiting without logging the cause; fatal stdout write errors now write a diagnostic to stderr before exit.
+- Fixed extension command and skill expansion error reports missing stack traces.
 
 ## [0.80.6] - 2026-07-09
 

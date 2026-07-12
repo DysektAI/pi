@@ -1247,6 +1247,7 @@ export class AgentSession {
 				extensionPath: `command:${commandName}`,
 				event: "command",
 				error: err instanceof Error ? err.message : String(err),
+				stack: err instanceof Error ? err.stack : undefined,
 			});
 			return true;
 		}
@@ -1278,6 +1279,7 @@ export class AgentSession {
 				extensionPath: skill.filePath,
 				event: "skill_expansion",
 				error: err instanceof Error ? err.message : String(err),
+				stack: err instanceof Error ? err.stack : undefined,
 			});
 			return text; // Return original on error
 		}
