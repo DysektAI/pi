@@ -331,6 +331,43 @@
         "pattern": "GetExtensionsHandler",
         "note": "REDUNDANT if upstream ships an equivalent getExtensions() on the extension API."
       }
+    },
+    {
+      "branch": "feat/web-search-extension",
+      "summary": "Web-search example extension exposing web_search/web_fetch tools (query + URL fetch) to the agent.",
+      "base": "main",
+      "mergeIntoLocal": true,
+      "drift": {
+        "type": "path-absent",
+        "ref": "upstream/main",
+        "path": "packages/coding-agent/examples/extensions/web-search.ts",
+        "note": "Example extension. REDUNDANT if upstream ships this example at this path."
+      }
+    },
+    {
+      "branch": "feat/discord-extension",
+      "summary": "Discord example extension sending session notifications to a webhook.",
+      "base": "main",
+      "mergeIntoLocal": true,
+      "drift": {
+        "type": "path-absent",
+        "ref": "upstream/main",
+        "path": "packages/coding-agent/examples/extensions/discord.ts",
+        "note": "Example extension. REDUNDANT if upstream ships this example at this path."
+      }
+    },
+    {
+      "branch": "feat/strip-ghost-tokens",
+      "summary": "Strip zero-width ghost tokens (ZWSP/ZWJ/ZWNJ) from outgoing text to prevent invisible-character corruption across providers.",
+      "base": "main",
+      "mergeIntoLocal": true,
+      "drift": {
+        "type": "grep-absent",
+        "ref": "upstream/main",
+        "file": "packages/ai/src/utils/sanitize-unicode.ts",
+        "pattern": "stripGhostTokens",
+        "note": "REDUNDANT if upstream adds its own zero-width ghost-token stripping in sanitize-unicode."
+      }
     }
   ]
 }
