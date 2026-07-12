@@ -63,6 +63,19 @@ function getClientApiKey(provider: string, apiKey: string | undefined, headers: 
 	throw new Error(`No API key for provider: ${provider}`);
 }
 
+function getHttpStatus(error: unknown): number | undefined {
+	const status = (error as { status?: unknown; code?: unknown })?.status ?? (error as { code?: unknown })?.code;
+	return typeof status === "number" ? status : undefined;
+}
+
+function formatErrorMessage(error: unknown, provider: string): string {
+	const status = getHttpStatus(error);
+	if (status === 401 || status === 403) {
+		return `Authentication failed (HTTP ${status}) for provider "${provider}". The API key was rejected; check that it is valid and not expired.`;
+	}
+	return formatProviderError(normalizeProviderError(error));
+}
+
 function hasToolHistory(messages: Message[]): boolean {
 	for (const msg of messages) {
 		if (msg.role === "toolResult") {
@@ -464,7 +477,7 @@ export const stream: StreamFunction<"openai-completions", OpenAICompletionsOptio
 				delete (block as { streamIndex?: number }).streamIndex;
 			}
 			output.stopReason = options?.signal?.aborted ? "aborted" : "error";
-			output.errorMessage = formatProviderError(normalizeProviderError(error));
+			output.errorMessage = formatErrorMessage(error, model.provider);
 			// Some providers via OpenRouter give additional information in this field.
 			// normalizeProviderError already stringifies the parsed body (error.error)
 			// into errorMessage, so only append the raw metadata when it is not already
