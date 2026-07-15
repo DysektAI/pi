@@ -182,7 +182,7 @@ def main(argv):
             print(f"{C_YELLOW}{len(redundant)} feature(s) look REDUNDANT — consider dropping:{C_RESET}")
             for b in redundant:
                 print(f"    - {b}")
-            print(f"{C_DIM}  Remove from .fork/fork-manifest.json, then delete the branch.{C_RESET}")
+            print(f"{C_DIM}  Confirm upstream equivalence, remove the local patch, then remove its manifest entry.{C_RESET}")
         if checks:
             print(f"{C_YELLOW}{len(checks)} feature(s) need a manual CHECK (upstream structure changed).{C_RESET}")
         if errors:

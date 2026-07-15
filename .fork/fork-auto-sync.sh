@@ -2,10 +2,10 @@
 #
 # fork-auto-sync.sh — unattended daily wrapper around fork-sync.sh.
 #
-# Intended to be invoked by a scheduler (systemd user timer). It:
-#   1. Runs the canonical fork-sync.sh (full sync + rebuild + build + tests),
-#      branch-agnostically (resolved from feat/fork-tooling), so dist/ is
-#      rebuilt in place and the ~/.local/bin/pi shim launches current code.
+# Legacy local fallback for machines that do not use the GitHub Actions sync.
+# Do not enable both schedulers. It:
+#   1. Runs fork-sync.sh from local (merge + build + tests), so dist/ is rebuilt
+#      in place and the ~/.local/bin/pi shim launches current code.
 #   1b. Updates installed pi packages (`pi update --extensions`) with the
 #      freshly built fork CLI, so git/npm extensions track their remotes
 #      without a manual `pi update --extensions`. Best-effort: a failed
@@ -17,9 +17,8 @@
 #      Both the marker and `systemctl --user status fork-sync` surface it.
 #   4. On success, clears any stale marker.
 #
-# It NEVER forces past a conflict: fork-sync.sh aborts the offending rebase and
-# this wrapper just reports it. You resolve once by hand; rerere replays it next
-# time (see FORK.md).
+# It NEVER forces past a source conflict: fork-sync.sh aborts and this wrapper
+# reports it. Resolve the overlap on local, test, and push (see FORK.md).
 #
 # Manual run:  bash .fork/fork-auto-sync.sh
 set -uo pipefail
@@ -51,24 +50,14 @@ ts() { date -Is; }
 
 cd "$REPO_ROOT" || { echo "$(ts) cannot cd to $REPO_ROOT" >> "$LOG"; exit 1; }
 
-# Resolve the canonical fork-sync.sh from feat/fork-tooling so this works no
-# matter which branch is checked out (same pattern fork-sync.sh uses itself).
-sync_tmp="$(mktemp)"
-if ! git show feat/fork-tooling:fork-sync.sh > "$sync_tmp" 2>>"$LOG"; then
-	echo "$(ts) ERROR: could not read fork-sync.sh from feat/fork-tooling" >> "$LOG"
-	rm -f "$sync_tmp"
-	exit 1
-fi
-chmod +x "$sync_tmp"
-
-# Run the full sync, tee output into the log. PATH must include node/npm; the
-# systemd unit sets that. Capture fork-sync.sh's exit code, not tee's.
-FORK_SYNC_ROOT="$REPO_ROOT" bash "$sync_tmp" 2>&1 | tee -a "$LOG"
+# Run the checked-out local branch's sync script. PATH must include node/npm;
+# the systemd unit sets that. Capture fork-sync.sh's exit code, not tee's.
+git switch local >> "$LOG" 2>&1 || exit 1
+bash ./fork-sync.sh 2>&1 | tee -a "$LOG"
 rc="${PIPESTATUS[0]}"
-rm -f "$sync_tmp"
 
 # Update installed pi packages (git/npm extensions) with the freshly built fork
-# CLI. Extensions live under ~/.pi/agent and are independent of the fork rebase,
+# CLI. Extensions live under ~/.pi/agent and are independent of the fork merge,
 # so run this regardless of the sync result and keep it non-fatal: a flaky
 # extension fetch must not mask a real sync conflict or trip the CONFLICT marker.
 # PI_SKIP_VERSION_CHECK matches the ~/.local/bin/pi launcher (a self-maintained
@@ -91,15 +80,14 @@ if [[ "$rc" -eq 0 ]]; then
 	exit 0
 fi
 
-# Non-zero: fork-sync.sh aborted (almost always a genuine rebase/merge conflict
-# it refused to force past). Record a marker with the tail of the log so it is
+# Non-zero: fork-sync.sh aborted on source overlap or validation failure.
+# Record a marker with the tail of the log so it is
 # obvious what needs a manual resolve.
 {
 	echo "fork-auto-sync FAILED at $(ts) (exit $rc)"
-	echo "A branch hit a conflict fork-sync.sh would not auto-resolve."
-	echo "Resolve it once by hand (rerere will remember):"
-	echo "  cd $REPO_ROOT"
-	echo "  # see which branch in the log below, then:  git switch <branch> && git rebase main"
+	echo "Upstream overlaps fork code or validation failed."
+	echo "Resolve the listed files on local, complete the merge, test, and push:"
+	echo "  cd $REPO_ROOT && git switch local"
 	echo "Full log: $LOG"
 	echo "--- last 25 log lines ---"
 	tail -n 25 "$LOG"

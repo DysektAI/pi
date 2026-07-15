@@ -1,0 +1,45 @@
+name: Fork sync
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 */6 * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fork-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: github.repository == 'DysektAI/pi'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: local
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Configure repository
+        run: |
+          git config user.name "fork-sync[bot]"
+          git config user.email "fork-sync[bot]@users.noreply.github.com"
+          git remote add upstream https://github.com/earendil-works/pi.git 2>/dev/null || \
+            git remote set-url upstream https://github.com/earendil-works/pi.git
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Merge upstream
+        env:
+          FORK_SYNC_NPM_CI: "0"
+        run: ./fork-sync.sh
