@@ -5,9 +5,9 @@ import { Agent } from "@earendil-works/pi-agent-core";
 import { describe, expect, it } from "vitest";
 import { AgentSession } from "../src/core/agent-session.ts";
 import { AuthStorage } from "../src/core/auth-storage.ts";
-import { ModelRegistry } from "../src/core/model-registry.ts";
 import { SessionManager } from "../src/core/session-manager.ts";
 import { SettingsManager } from "../src/core/settings-manager.ts";
+import { createModelRegistry, getModelRuntime } from "./model-runtime-test-utils.ts";
 import { createTestExtensionsResult, createTestResourceLoader } from "./utilities.ts";
 
 describe("ExtensionAPI.getExtensions", () => {
@@ -34,12 +34,13 @@ describe("ExtensionAPI.getExtensions", () => {
 				baseDir: join(tempDir, ".pi/extensions"),
 			};
 
+			const modelRegistry = await createModelRegistry(AuthStorage.create(join(tempDir, "auth.json")));
 			const session = new AgentSession({
 				agent: new Agent({ initialState: { systemPrompt: "", tools: [] } }),
 				sessionManager: SessionManager.inMemory(),
 				settingsManager: SettingsManager.create(tempDir, tempDir),
 				cwd: tempDir,
-				modelRegistry: ModelRegistry.create(AuthStorage.create(join(tempDir, "auth.json"))),
+				modelRuntime: getModelRuntime(modelRegistry),
 				resourceLoader: createTestResourceLoader({ extensionsResult }),
 			});
 

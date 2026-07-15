@@ -101,7 +101,24 @@ export class AssistantMessageComponent extends Container {
 				// Assistant text messages with no background - trim the text
 				// Set paddingY=0 to avoid extra spacing before tool executions
 				this.contentContainer.addChild(new Markdown(content.text.trim(), this.outputPad, 0, this.markdownTheme));
-			} else if (content.type === "thinking" && content.thinking.trim()) {
+			} else if (content.type === "thinking") {
+				const thinkingBlocks: string[] = [];
+				for (; i < message.content.length; i++) {
+					const thinkingContent = message.content[i];
+					if (thinkingContent.type !== "thinking") {
+						break;
+					}
+					const thinking = thinkingContent.thinking.trim();
+					if (thinking) {
+						thinkingBlocks.push(thinking);
+					}
+				}
+				i--;
+
+				if (thinkingBlocks.length === 0) {
+					continue;
+				}
+
 				// Add spacing only when another visible assistant content block follows.
 				// This avoids a superfluous blank line before separately-rendered tool execution blocks.
 				const hasVisibleContentAfter = message.content
@@ -109,29 +126,24 @@ export class AssistantMessageComponent extends Container {
 					.some((c) => (c.type === "text" && c.text.trim()) || (c.type === "thinking" && c.thinking.trim()));
 
 				if (this.hideThinkingBlock) {
-					// Show static thinking label when hidden
+					// Show one static label for each run of thinking blocks when hidden.
 					this.contentContainer.addChild(
 						new Text(theme.italic(theme.fg("thinkingText", this.hiddenThinkingLabel)), this.outputPad, 0),
 					);
-					if (hasVisibleContentAfter) {
-						this.contentContainer.addChild(new Spacer(1));
-					}
 				} else {
-					// Label the trace so it's unambiguous at a glance (pi normalizes
-					// Anthropic "thinking" and OpenAI "reasoning" into one channel).
+					// Label each coalesced thinking run so the normalized reasoning channel is explicit.
 					this.contentContainer.addChild(
-						new Text(theme.bold(theme.fg("thinkingText", "[Thinking]")), 1, 0),
+						new Text(theme.bold(theme.fg("thinkingText", "[Thinking]")), this.outputPad, 0),
 					);
-					// Thinking traces in thinkingText color, italic
 					this.contentContainer.addChild(
-						new Markdown(content.thinking.trim(), this.outputPad, 0, this.markdownTheme, {
+						new Markdown(thinkingBlocks.join("\n\n"), this.outputPad, 0, this.markdownTheme, {
 							color: (text: string) => theme.fg("thinkingText", text),
 							italic: true,
 						}),
 					);
-					if (hasVisibleContentAfter) {
-						this.contentContainer.addChild(new Spacer(1));
-					}
+				}
+				if (hasVisibleContentAfter) {
+					this.contentContainer.addChild(new Spacer(1));
 				}
 			}
 		}

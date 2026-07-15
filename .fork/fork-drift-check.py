@@ -45,6 +45,8 @@ def git_show(ref, path):
             ["git", "show", f"{ref}:{path}"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=True,
         ).stdout
     except subprocess.CalledProcessError:
