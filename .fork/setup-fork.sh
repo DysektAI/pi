@@ -26,6 +26,10 @@ cd "$TOPLEVEL"
 say() { printf '\033[1;36m==> %s\033[0m\n' "$*"; }
 warn() { printf '\033[1;33m!! %s\033[0m\n' "$*"; }
 
+for PYTHON_BIN in python3 python py; do
+	command -v "$PYTHON_BIN" >/dev/null 2>&1 && "$PYTHON_BIN" -c 'import sys; raise SystemExit(sys.version_info[0] != 3)' >/dev/null 2>&1 && break
+done
+
 ATTR_LINE='**/CHANGELOG.md merge=fork-changelog'
 ATTR_FILE="${GIT_DIR}/info/attributes"
 DRIVER_SRC="${TOPLEVEL}/.fork/changelog-merge.py"
@@ -46,7 +50,7 @@ fi
 
 say "Registering fork CHANGELOG merge driver (local repo config)"
 git config merge.fork-changelog.name "fork CHANGELOG union"
-git config merge.fork-changelog.driver "python3 '${DRIVER_DST}' %O %A %B %A %P"
+git config merge.fork-changelog.driver "${PYTHON_BIN} '${DRIVER_DST}' %O %A %B %A %P"
 
 say "Mapping CHANGELOG.md to the driver (.git/info/attributes, untracked)"
 mkdir -p "${GIT_DIR}/info"
@@ -89,8 +93,8 @@ if [[ -n "$RR_SRC" && -d "$RR_SRC" ]]; then
 fi
 [[ -n "$RR_TMP" ]] && rm -rf "$RR_TMP"
 
-if ! command -v python3 >/dev/null 2>&1; then
-	printf '\033[1;33m!! python3 not found on PATH; the CHANGELOG merge driver needs it.\033[0m\n'
+if ! "$PYTHON_BIN" -c 'import sys; raise SystemExit(sys.version_info[0] != 3)' >/dev/null 2>&1; then
+	printf '\033[1;33m!! Python 3 not found on PATH; the CHANGELOG merge driver needs it.\033[0m\n'
 fi
 
 say "Done. Fork git config installed."

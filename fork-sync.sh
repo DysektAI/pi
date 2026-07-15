@@ -18,6 +18,11 @@ say() { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
 warn() { printf '\033[1;33m!! %s\033[0m\n' "$*"; }
 die() { printf '\033[1;31mxx %s\033[0m\n' "$*" >&2; exit 1; }
 
+for PYTHON_BIN in python3 python py; do
+	command -v "$PYTHON_BIN" >/dev/null 2>&1 && "$PYTHON_BIN" -c 'import sys; raise SystemExit(sys.version_info[0] != 3)' >/dev/null 2>&1 && break
+done
+"$PYTHON_BIN" -c 'import sys; raise SystemExit(sys.version_info[0] != 3)' >/dev/null 2>&1 || die "Python 3 is required."
+
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 [[ -z "$(git status --porcelain)" ]] || die "Working tree is not clean. Commit or stash changes first."
@@ -38,7 +43,7 @@ fi
 
 if [[ "$DO_DRIFT" -eq 1 && -f .fork/fork-drift-check.py ]]; then
 	say "Checking which fork patches upstream may have absorbed"
-	python3 .fork/fork-drift-check.py || warn "Review REDUNDANT/CHECK entries after this sync."
+	"$PYTHON_BIN" .fork/fork-drift-check.py || warn "Review REDUNDANT/CHECK entries after this sync."
 fi
 
 if git merge-base --is-ancestor main local; then
