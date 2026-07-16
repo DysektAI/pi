@@ -23,6 +23,8 @@
 - Added neutral auth-flow information/link events and provider-owned Amazon Bedrock and Google Vertex AI credential selection flows.
 - Added `ModelsStore` with an in-memory default for restoring and persisting dynamic provider catalogs.
 - Added the dynamic Radius `pi-messages` gateway provider with OAuth and credential-specific catalog refresh.
+- Added `Models.refresh({ force: true })` to let providers bypass freshness checks for explicit refreshes.
+- Added xAI device-code OAuth login and routed Grok 4.5 through OpenAI Responses, with low, medium, and high thinking support ([#6651](https://github.com/earendil-works/pi-mono/pull/6651) by [@Jaaneek](https://github.com/Jaaneek)).
 
 ### Fixed
 
@@ -32,6 +34,7 @@
 - Fixed OpenAI-compatible streams to surface a clear authentication-failure message naming the provider on HTTP 401/403, instead of an opaque status-code error.
 - Fixed Cloudflare Workers AI and AI Gateway streams to materialize account and gateway endpoint placeholders after auth resolution, including compat streaming with custom model objects.
 - Fixed lazy provider streams to preserve their final assistant message when forwarding an inner stream.
+- Fixed OpenAI Codex session IDs longer than 64 characters to meet the API limit ([#6630](https://github.com/earendil-works/pi-mono/issues/6630)).
 
 ## [0.80.6] - 2026-07-09
 
