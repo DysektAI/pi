@@ -98,6 +98,8 @@ export type {
 	InputSource,
 	KeybindingsManager,
 	LoadExtensionsResult,
+	LoadedExtensionInfo,
+	LoadedExtensionScope,
 	LsToolCallEvent,
 	MessageRenderer,
 	MessageRenderOptions,

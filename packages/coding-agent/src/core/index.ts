@@ -58,6 +58,8 @@ export {
 	type ExtensionUIContext,
 	type InlineExtension,
 	type LoadExtensionsResult,
+	type LoadedExtensionInfo,
+	type LoadedExtensionScope,
 	type MessageRenderer,
 	type RegisteredCommand,
 	type SessionBeforeCompactEvent,

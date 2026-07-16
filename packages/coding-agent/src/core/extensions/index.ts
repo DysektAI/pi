@@ -83,6 +83,7 @@ export type {
 	GetActiveToolsHandler,
 	GetAllToolsHandler,
 	GetCommandsHandler,
+	GetExtensionsHandler,
 	GetThinkingLevelHandler,
 	GrepToolCallEvent,
 	GrepToolResultEvent,
@@ -93,6 +94,8 @@ export type {
 	InputSource,
 	KeybindingsManager,
 	LoadExtensionsResult,
+	LoadedExtensionInfo,
+	LoadedExtensionScope,
 	LsToolCallEvent,
 	LsToolResultEvent,
 	// Events - Message
