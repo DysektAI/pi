@@ -3,8 +3,12 @@ import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ENV_AGENT_DIR, PACKAGE_NAME, VERSION } from "../src/config.ts";
+import { ModelRuntime } from "../src/core/model-runtime.ts";
+import type { ResolvedPaths } from "../src/core/package-manager.ts";
+import { InMemorySettingsStorage, SettingsManager } from "../src/core/settings-manager.ts";
 import { ProjectTrustStore } from "../src/core/trust-manager.ts";
 import { main } from "../src/main.ts";
+import { ConfigSelectorComponent } from "../src/modes/interactive/components/config-selector.ts";
 import { handlePackageCommand } from "../src/package-manager-cli.ts";
 
 describe("package commands", () => {
@@ -26,6 +30,24 @@ describe("package commands", () => {
 
 	async function runPackageCommandDirectly(args: string[]): Promise<void> {
 		expect(await handlePackageCommand(args)).toBe(true);
+	}
+
+	function extensionPaths(
+		packageRoot: string,
+		source: string,
+		scope: "user" | "project",
+		names: string[],
+	): ResolvedPaths {
+		return {
+			extensions: names.map((name) => ({
+				path: join(packageRoot, "extensions", name),
+				enabled: true,
+				metadata: { source, scope, origin: "package", baseDir: packageRoot },
+			})),
+			skills: [],
+			prompts: [],
+			themes: [],
+		};
 	}
 
 	beforeEach(() => {
@@ -348,6 +370,73 @@ describe("package commands", () => {
 			logSpy.mockRestore();
 			errorSpy.mockRestore();
 		}
+	});
+
+	it("refreshes only model catalogs with update --models", async () => {
+		const refresh = vi.fn(async () => ({ aborted: false, errors: new Map<string, Error>() }));
+		const create = vi.spyOn(ModelRuntime, "create").mockResolvedValue({ refresh } as unknown as ModelRuntime);
+		const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+		const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+		await expect(runPackageCommandDirectly(["update", "--models"])).resolves.toBeUndefined();
+
+		expect(create).toHaveBeenCalledWith({
+			authPath: join(agentDir, "auth.json"),
+			modelsPath: join(agentDir, "models.json"),
+			allowModelNetwork: false,
+		});
+		expect(refresh).toHaveBeenCalledWith({
+			allowNetwork: true,
+			force: true,
+			signal: expect.any(AbortSignal),
+		});
+		expect(logSpy.mock.calls.map(([message]) => String(message)).join("\n")).toContain("Model catalogs refreshed");
+		expect(errorSpy).not.toHaveBeenCalled();
+		expect(process.exitCode).toBeUndefined();
+	});
+
+	it("rejects update --models combined with another update target", async () => {
+		const create = vi.spyOn(ModelRuntime, "create");
+		const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+		await expect(runPackageCommandDirectly(["update", "--models", "--self"])).resolves.toBeUndefined();
+
+		expect(create).not.toHaveBeenCalled();
+		expect(errorSpy.mock.calls.map(([message]) => String(message)).join("\n")).toContain(
+			"--models cannot be combined with --self",
+		);
+		expect(process.exitCode).toBe(1);
+	});
+
+	it("cycles project package overrides in config local mode", async () => {
+		const storage = new InMemorySettingsStorage();
+		storage.withLock("global", () => JSON.stringify({ packages: ["npm:pi-tools"] }));
+		const settingsManager = SettingsManager.fromStorage(storage, { projectTrusted: true });
+		const resolvedPaths = extensionPaths(join(tempDir, "pkg"), "npm:pi-tools", "user", ["bar.ts"]);
+		const selector = new ConfigSelectorComponent(
+			{ global: resolvedPaths, project: resolvedPaths },
+			settingsManager,
+			projectDir,
+			agentDir,
+			() => {},
+			() => {},
+			() => {},
+			24,
+			"project",
+		);
+
+		selector.getResourceList().handleInput(" ");
+		expect(settingsManager.getProjectSettings().packages).toEqual([
+			{ source: "npm:pi-tools", autoload: false, extensions: ["-extensions/bar.ts"] },
+		]);
+
+		selector.getResourceList().handleInput(" ");
+		expect(settingsManager.getProjectSettings().packages).toEqual([
+			{ source: "npm:pi-tools", autoload: false, extensions: ["+extensions/bar.ts"] },
+		]);
+
+		selector.getResourceList().handleInput(" ");
+		expect(settingsManager.getProjectSettings().packages).toEqual([]);
 	});
 
 	it("shows a friendly error for unknown install options", async () => {
