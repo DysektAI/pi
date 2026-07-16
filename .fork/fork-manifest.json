@@ -33,18 +33,6 @@
       }
     },
     {
-      "branch": "feat/read-outline-view",
-      "summary": "Dependency-free 'view: outline' option on the read tool: line-numbered structural summary of source files (bodies elided) for cheap navigation of large files.",
-      "base": "main",
-      "mergeIntoLocal": true,
-      "drift": {
-        "type": "path-absent",
-        "ref": "upstream/main",
-        "path": "packages/coding-agent/src/core/tools/read-outline.ts",
-        "note": "REDUNDANT if upstream ships its own structural/outline read mode at this path or supersedes it."
-      }
-    },
-    {
       "branch": "feat/markdown-codeblock-border-style",
       "summary": "Configurable code block border styles in the TUI markdown renderer.",
       "base": "main",
@@ -79,18 +67,6 @@
         "ref": "upstream/main",
         "file": "packages/coding-agent/src/modes/interactive/theme/theme.ts",
         "pattern": "resolveInlineCodePath"
-      }
-    },
-    {
-      "branch": "feat/footer-thinking-level-color",
-      "summary": "Color the footer thinking-level indicator per level.",
-      "base": "main",
-      "mergeIntoLocal": true,
-      "drift": {
-        "type": "grep-absent",
-        "ref": "upstream/main",
-        "file": "packages/coding-agent/src/modes/interactive/components/footer.ts",
-        "pattern": "thinkingLevelColor"
       }
     },
     {
@@ -207,19 +183,6 @@
         "file": "packages/ai/src/api/openai-completions.ts",
         "pattern": "formatErrorMessage",
         "note": "REDUNDANT if upstream adds its own auth-failure messaging for 401/403 in openai-completions."
-      }
-    },
-    {
-      "branch": "feat/extensions-getextensions-api",
-      "summary": "Adds pi.getExtensions() to the extension API, returning loaded extensions with canonical name/path/scope/source metadata.",
-      "base": "main",
-      "mergeIntoLocal": true,
-      "drift": {
-        "type": "grep-absent",
-        "ref": "upstream/main",
-        "file": "packages/coding-agent/src/core/extensions/types.ts",
-        "pattern": "GetExtensionsHandler",
-        "note": "REDUNDANT if upstream ships an equivalent getExtensions() on the extension API."
       }
     },
     {

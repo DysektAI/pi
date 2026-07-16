@@ -71,7 +71,6 @@ import {
 	ExtensionRunner,
 	type ExtensionUIContext,
 	type InputSource,
-	type LoadedExtensionInfo,
 	type MessageEndEvent,
 	type MessageStartEvent,
 	type MessageUpdateEvent,
