@@ -38,6 +38,8 @@
 - Added provider-owned `/login` discovery directly from registered pi-ai providers, including ambient auth status and informational links.
 - Added file-backed dynamic catalogs in `models-store.json`, per-provider pi.dev catalog overlays, and Radius gateway support including offline migration from legacy credential-cached catalogs.
 - Added extension provider `refreshModels(context)` support for dynamic model discovery with optional provider-controlled persistence.
+- Added built-in llama.cpp router support with `/login` connection setup and `/llama` Hugging Face model search and downloads, explicit loading, unloading, and live progress. See [llama.cpp](docs/llama-cpp.md).
+- Added extension registration for complete pi-ai providers, including native authentication, model refresh, filtering, and streaming behavior.
 
 ### Fixed
 
@@ -51,6 +53,10 @@
 - Fixed adjacent assistant thinking blocks to render as one thinking section.
 - Fixed inherited Kimi K3 pricing metadata for Moonshot AI and Moonshot AI China.
 - Fixed inherited catalog generation restoring xAI models removed in 0.80.9 ([#6736](https://github.com/earendil-works/pi/issues/6736)).
+- Fixed prompt-template defaults for all arguments (`${@:-default}` and `${ARGUMENTS:-default}`) ([#6695](https://github.com/earendil-works/pi/issues/6695)).
+- Fixed obsolete custom UI, custom tool, and custom editor examples in the extension documentation ([#6735](https://github.com/earendil-works/pi/issues/6735)).
+- Fixed Kimi Coding sessions to show API-equivalent implied costs with the subscription indicator.
+- Fixed OpenAI Responses early stream endings to trigger automatic retry instead of ending the agent run ([#6727](https://github.com/earendil-works/pi/issues/6727)).
 
 ## [0.80.6] - 2026-07-09
 

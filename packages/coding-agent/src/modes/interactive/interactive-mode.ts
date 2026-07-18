@@ -1441,10 +1441,13 @@ export class InteractiveMode {
 		const themesResult = this.session.resourceLoader.getThemes();
 		const extensions =
 			options?.extensions ??
-			this.session.resourceLoader.getExtensions().extensions.map((extension) => ({
-				path: extension.path,
-				sourceInfo: extension.sourceInfo,
-			}));
+			this.session.resourceLoader
+				.getExtensions()
+				.extensions.filter((extension) => !extension.hidden)
+				.map((extension) => ({
+					path: extension.path,
+					sourceInfo: extension.sourceInfo,
+				}));
 		const sourceInfos = new Map<string, SourceInfo>();
 		for (const extension of extensions) {
 			if (extension.sourceInfo) {
@@ -4045,10 +4048,12 @@ export class InteractiveMode {
 				await this.session.prompt(message.text);
 			}
 
-			// Send first prompt (starts streaming)
-			const promptPromise = this.session.prompt(firstPrompt.text).catch((error) => {
-				restoreQueue(error);
-			});
+			// Start a prompt when idle, or queue it into a run still finishing compaction.
+			const promptPromise = this.session
+				.prompt(firstPrompt.text, { streamingBehavior: firstPrompt.mode })
+				.catch((error) => {
+					restoreQueue(error);
+				});
 
 			// Queue remaining messages
 			for (const message of rest) {
