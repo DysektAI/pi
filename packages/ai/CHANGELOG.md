@@ -5,6 +5,7 @@
 ### Changed
 
 - Changed `Models.getAuth(model)` to include model headers and added a Models-only `transformHeaders` stream option that runs after auth and explicit header assembly but is not forwarded to providers.
+- Changed model generation to validate ignored provider data before compilation; `npm run build` refreshes model data as before, while `npm run build:offline` reuses existing data without network access.
 
 ### Breaking Changes
 
@@ -23,6 +24,9 @@
 - Added neutral auth-flow information/link events and provider-owned Amazon Bedrock and Google Vertex AI credential selection flows.
 - Added `ModelsStore` with an in-memory default for restoring and persisting dynamic provider catalogs.
 - Added the dynamic Radius `pi-messages` gateway provider with OAuth and credential-specific catalog refresh.
+- Added `contentText` for extracting joined text from message content.
+- Added a shared `uuidv7` utility for time-ordered identifiers.
+- Added optional usage metadata to tool result messages ([#6671](https://github.com/earendil-works/pi/pull/6671) by [@davidbrai](https://github.com/davidbrai)).
 
 ### Fixed
 
@@ -39,6 +43,8 @@
 - Fixed GitHub Copilot long-context pricing tiers in generated model metadata ([#6668](https://github.com/earendil-works/pi/issues/6668)).
 - Fixed Kimi Coding subscription models to report API-equivalent implied costs when models.dev reports zero pricing.
 - Fixed OpenAI Responses early stream endings to be classified as retryable provider errors ([#6727](https://github.com/earendil-works/pi/issues/6727)).
+- Fixed sessionless OpenAI Codex WebSocket requests to use UUIDv7 request IDs, enabling models that reject UUIDv4 IDs.
+- Fixed GPT-5.6 Codex models to default to the 272K context window, avoiding automatic long-context pricing ([#6838](https://github.com/earendil-works/pi/issues/6838)).
 
 ## [0.80.6] - 2026-07-09
 
