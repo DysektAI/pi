@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Agent } from "@earendil-works/pi-agent-core";
+import { Agent, type StreamFn } from "@earendil-works/pi-agent-core";
 import { describe, expect, it } from "vitest";
 import { AgentSession } from "../src/core/agent-session.ts";
 import { AuthStorage } from "../src/core/auth-storage.ts";
@@ -10,6 +10,10 @@ import { SettingsManager } from "../src/core/settings-manager.ts";
 import type { ExtensionAPI, LoadedExtensionInfo } from "../src/index.ts";
 import { createInMemoryModelRegistry, getModelRuntime } from "./model-runtime-test-utils.ts";
 import { createTestExtensionsResult, createTestResourceLoader } from "./utilities.ts";
+
+const unusedStreamFunction: StreamFn = () => {
+	throw new Error("Unexpected stream call");
+};
 
 describe("ExtensionAPI.getExtensions", () => {
 	it("returns a fresh snapshot with canonical metadata for every extension scope", async () => {
@@ -47,7 +51,7 @@ describe("ExtensionAPI.getExtensions", () => {
 			}
 
 			const session = new AgentSession({
-				agent: new Agent({ initialState: { systemPrompt: "", tools: [] } }),
+				agent: new Agent({ streamFunction: unusedStreamFunction, initialState: { systemPrompt: "", tools: [] } }),
 				sessionManager: SessionManager.inMemory(),
 				settingsManager: SettingsManager.create(tempDir, tempDir),
 				cwd: tempDir,
