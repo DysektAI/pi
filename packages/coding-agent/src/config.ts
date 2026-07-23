@@ -26,7 +26,7 @@ export const isBunRuntime = !!process.versions.bun;
 // Install Method Detection
 // =============================================================================
 
-export type InstallMethod = "bun-binary" | "npm" | "pnpm" | "yarn" | "bun" | "unknown";
+export type InstallMethod = "bun-binary" | "npm" | "pnpm" | "yarn" | "bun" | "source" | "unknown";
 
 interface SelfUpdateCommandStep {
 	command: string;
@@ -70,6 +70,19 @@ function makeSelfUpdateCommandStep(command: string, args: string[]): SelfUpdateC
 	};
 }
 
+function isSourceCheckout(): boolean {
+	// Walk up from __dirname looking for a .git directory that indicates
+	// this is a source checkout (e.g. ~/pi-fork).
+	let dir = __dirname;
+	for (let i = 0; i < 8; i++) {
+		if (existsSync(join(dir, ".git"))) return true;
+		const parent = dirname(dir);
+		if (parent === dir) break;
+		dir = parent;
+	}
+	return false;
+}
+
 export function detectInstallMethod(): InstallMethod {
 	if (isBunBinary) {
 		return "bun-binary";
@@ -89,6 +102,9 @@ export function detectInstallMethod(): InstallMethod {
 	if (resolvedPath.includes("/npm/") || resolvedPath.includes("/node_modules/")) {
 		return "npm";
 	}
+
+	// Detect source checkout (e.g. ~/pi-fork/packages/coding-agent)
+	if (isSourceCheckout()) return "source";
 
 	return "unknown";
 }
@@ -181,6 +197,23 @@ function getSelfUpdateCommandForMethod(
 					: makeSelfUpdateCommandStep(command, [...prefixArgs, "uninstall", "-g", installedPackageName]);
 			return makeSelfUpdateCommand(installStep, uninstallStep);
 		}
+		case "source": {
+			// Source checkout -- find the repo root from the .git directory,
+			// then pull and rebuild. This handles DysektAI/pi fork installs
+			// where pi is built from source via setup.py.
+			let repoRoot = __dirname;
+			for (let i = 0; i < 8; i++) {
+				if (existsSync(join(repoRoot, ".git"))) break;
+				repoRoot = dirname(repoRoot);
+			}
+			const pull = makeSelfUpdateCommandStep("git", ["-C", repoRoot, "pull", "--ff-only"]);
+			const build = makeSelfUpdateCommandStep("npm", ["--prefix", repoRoot, "run", "build"]);
+			return {
+				...pull,
+				display: `${pull.display} && ${build.display}`,
+				steps: [pull, build],
+			};
+		}
 		case "unknown":
 			return undefined;
 	}
@@ -243,6 +276,7 @@ function getGlobalPackageRoots(method: InstallMethod, _packageName: string, npmC
 			return roots;
 		}
 		case "bun-binary":
+		case "source":
 		case "unknown":
 			return [];
 	}
@@ -302,6 +336,7 @@ function isSelfUpdatePathWritable(): boolean {
 }
 
 function isManagedByGlobalPackageManager(method: InstallMethod, packageName: string, npmCommand?: string[]): boolean {
+	if (method === "source") return isSourceCheckout();
 	const packageDirs = [getPackageDir(), getEntrypointPackageDir()].filter((dir): dir is string => !!dir);
 	const packageDirCandidates = packageDirs.flatMap((dir) => getPathComparisonCandidates(dir));
 	return getGlobalPackageRoots(method, packageName, npmCommand).some((root) => {
