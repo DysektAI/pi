@@ -4,11 +4,12 @@ name: Auto-release on push to local
 # `pi update --self` detects it (via the fork's GitHub Releases API
 # in version-check.ts). The version scheme is:
 #
-#   v{package.json version}+local.{GITHUB_RUN_NUMBER}
+#   v{package.json version}.local.{GITHUB_RUN_NUMBER}
 #
-# Build metadata (+local.N) is ignored by semver comparison, so pi's
-# isNewerPackageVersion falls back to string comparison and correctly
-# detects the release as newer than the base version.
+# The .local.N suffix makes this invalid semver (period after patch is
+# not allowed), so semver valid() returns null, compare() returns undefined,
+# and isNewerPackageVersion falls back to string comparison — correctly
+# detecting the release as newer than the base version.
 
 on:
   push:
@@ -29,7 +30,7 @@ jobs:
         id: version
         run: |
           VERSION=$(node -p "require('./packages/coding-agent/package.json').version")
-          TAG="v${VERSION}+local.${GITHUB_RUN_NUMBER}"
+          TAG="v${VERSION}.local.${GITHUB_RUN_NUMBER}"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "tag=$TAG" >> $GITHUB_OUTPUT
 
