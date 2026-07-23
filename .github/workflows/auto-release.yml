@@ -18,6 +18,7 @@ name: Auto-release on push to local
 on:
   push:
     branches: [local]
+  workflow_dispatch:
 
 permissions:
   contents: write
