@@ -1,0 +1,66 @@
+name: Auto-release on push to local
+
+# Every push to the `local` branch creates a GitHub Release so
+# `pi update --self` detects it (via the fork's GitHub Releases API
+# in version-check.ts). The version scheme is:
+#
+#   v{package.json version}+local.{GITHUB_RUN_NUMBER}
+#
+# Build metadata (+local.N) is ignored by semver comparison, so pi's
+# isNewerPackageVersion falls back to string comparison and correctly
+# detects the release as newer than the base version.
+
+on:
+  push:
+    branches: [local]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: local
+
+      - name: Read version from package.json
+        id: version
+        run: |
+          VERSION=$(node -p "require('./packages/coding-agent/package.json').version")
+          TAG="v${VERSION}+local.${GITHUB_RUN_NUMBER}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+
+      - name: Create tag and release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          git tag "$TAG"
+          git push origin "$TAG"
+
+          # Changelog: list commits since last release tag
+          LAST_TAG=$(git tag --sort=-v:refname | grep -v "$TAG" | head -1)
+          if [ -n "$LAST_TAG" ]; then
+            RANGE="${LAST_TAG}..${TAG}"
+          else
+            RANGE="$TAG"
+          fi
+
+          COMMITS=$(git log "$RANGE" --oneline --no-merges | head -20)
+
+          gh release create "$TAG" \
+            --title "pi ${VERSION} — local build ${GITHUB_RUN_NUMBER}" \
+            --notes "Auto-released from push to \`local\`.
+
+          **Base version:** ${VERSION}
+          **Build number:** ${GITHUB_RUN_NUMBER}
+
+          ## Changes since last release
+
+          \`\`\`
+          ${COMMITS:-first release}
+          \`\`\`"
