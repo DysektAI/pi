@@ -10,6 +10,10 @@ name: Auto-release on push to local
 # not allowed), so semver valid() returns null, compare() returns undefined,
 # and isNewerPackageVersion falls back to string comparison — correctly
 # detecting the release as newer than the base version.
+#
+# After creating the release, the CI bumps package.json to the same version
+# and commits with [skip ci] so machines that `pi update` (git pull) get
+# the version bump and stop seeing the update prompt.
 
 on:
   push:
@@ -29,16 +33,18 @@ jobs:
       - name: Read version from package.json
         id: version
         run: |
-          VERSION=$(node -p "require('./packages/coding-agent/package.json').version")
-          TAG="v${VERSION}.local.${GITHUB_RUN_NUMBER}"
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          BASE_VERSION=$(node -p "require('./packages/coding-agent/package.json').version")
+          TAG="v${BASE_VERSION}.local.${GITHUB_RUN_NUMBER}"
+          FULL_VERSION="${BASE_VERSION}.local.${GITHUB_RUN_NUMBER}"
+          echo "base=$BASE_VERSION" >> $GITHUB_OUTPUT
+          echo "full=$FULL_VERSION" >> $GITHUB_OUTPUT
           echo "tag=$TAG" >> $GITHUB_OUTPUT
 
       - name: Create tag and release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.version.outputs.tag }}
-          VERSION: ${{ steps.version.outputs.version }}
+          VERSION: ${{ steps.version.outputs.base }}
         run: |
           git tag "$TAG"
           git push origin "$TAG"
@@ -65,3 +71,21 @@ jobs:
           \`\`\`
           ${COMMITS:-first release}
           \`\`\`"
+
+      - name: Bump package.json version
+        env:
+          FULL_VERSION: ${{ steps.version.outputs.full }}
+        run: |
+          # Bump the coding-agent package.json so pi --version reflects
+          # the release version after a git pull. [skip ci] prevents recursion.
+          node -e "
+            const pkg = require('./packages/coding-agent/package.json');
+            pkg.version = '${FULL_VERSION}';
+            require('fs').writeFileSync('./packages/coding-agent/package.json', JSON.stringify(pkg, null, 2) + '\n');
+          "
+
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add packages/coding-agent/package.json
+          git commit -m "chore: bump version to ${FULL_VERSION} [skip ci]"
+          git push origin local
