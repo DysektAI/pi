@@ -67,6 +67,7 @@ const REQUEST_COMPRESSION_ZSTD_LEVEL = 3;
 const CODEX_TOOL_CALL_PROVIDERS = new Set(["openai", "openai-codex", "opencode"]);
 const WEBSOCKET_MESSAGE_TOO_BIG_CLOSE_CODE = 1009;
 const WEBSOCKET_CONNECTION_LIMIT_REACHED_CODE = "websocket_connection_limit_reached";
+const PREVIOUS_RESPONSE_NOT_FOUND_CODE = "previous_response_not_found";
 
 const CODEX_RESPONSE_STATUSES = new Set<CodexResponseStatus>([
 	"completed",
@@ -157,9 +158,16 @@ function getRetryAfterDelayMs(headers: Headers): number | undefined {
 	return undefined;
 }
 
-function capRetryDelayMs(delayMs: number, options?: StreamOptions): number {
+class RetryDelayExceededError extends Error {}
+
+function validateRetryDelayMs(delayMs: number, options?: StreamOptions): number {
 	const maxRetryDelayMs = options?.maxRetryDelayMs ?? DEFAULT_MAX_RETRY_DELAY_MS;
-	return maxRetryDelayMs > 0 ? Math.min(delayMs, maxRetryDelayMs) : delayMs;
+	if (maxRetryDelayMs > 0 && delayMs > maxRetryDelayMs) {
+		throw new RetryDelayExceededError(
+			`Server requested ${Math.ceil(delayMs / 1000)}s retry delay (max: ${Math.ceil(maxRetryDelayMs / 1000)}s)`,
+		);
+	}
+	return delayMs;
 }
 
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
@@ -273,6 +281,7 @@ export const stream: StreamFunction<"openai-codex-responses", OpenAICodexRespons
 			const httpTimeoutMs = normalizeTimeoutMs(options?.timeoutMs);
 			const websocketConnectTimeoutMs = normalizeTimeoutMs(options?.websocketConnectTimeoutMs);
 			const transport = options?.transport || "auto";
+			let startEmitted = false;
 			const websocketDisabledForSession = transport !== "sse" && isWebSocketSseFallbackActive(options?.sessionId);
 			if (websocketDisabledForSession) {
 				recordWebSocketSseFallback(options?.sessionId);
@@ -281,6 +290,7 @@ export const stream: StreamFunction<"openai-codex-responses", OpenAICodexRespons
 			if (transport !== "sse" && !websocketDisabledForSession) {
 				let websocketStarted = false;
 				let retriedWebSocketConnectionLimit = false;
+				let retriedMissingWebSocketContinuation = false;
 				while (true) {
 					websocketStarted = false;
 					try {
@@ -293,6 +303,10 @@ export const stream: StreamFunction<"openai-codex-responses", OpenAICodexRespons
 							model,
 							() => {
 								websocketStarted = true;
+								if (!startEmitted) {
+									startEmitted = true;
+									stream.push({ type: "start", partial: output });
+								}
 							},
 							httpTimeoutMs,
 							websocketConnectTimeoutMs,
@@ -312,6 +326,11 @@ export const stream: StreamFunction<"openai-codex-responses", OpenAICodexRespons
 					} catch (error) {
 						const aborted = options?.signal?.aborted;
 						const connectionLimitBeforeStart = !websocketStarted && isWebSocketConnectionLimitReachedError(error);
+						const previousResponseNotFound = isPreviousResponseNotFoundError(error);
+						if (!aborted && previousResponseNotFound && !retriedMissingWebSocketContinuation) {
+							retriedMissingWebSocketContinuation = true;
+							continue;
+						}
 						if (!aborted && connectionLimitBeforeStart && !retriedWebSocketConnectionLimit) {
 							retriedWebSocketConnectionLimit = true;
 							continue;
@@ -392,9 +411,7 @@ export const stream: StreamFunction<"openai-codex-responses", OpenAICodexRespons
 						const delayMs =
 							retryAfterDelayMs === undefined
 								? BASE_DELAY_MS * 2 ** attempt
-								: response.status === 429
-									? capRetryDelayMs(retryAfterDelayMs, options)
-									: retryAfterDelayMs;
+								: validateRetryDelayMs(retryAfterDelayMs, options);
 
 						await sleep(delayMs, options?.signal);
 						continue;
@@ -415,7 +432,11 @@ export const stream: StreamFunction<"openai-codex-responses", OpenAICodexRespons
 					}
 					lastError = error instanceof Error ? error : new Error(String(error));
 					// Network errors are retryable
-					if (attempt < maxRetries && !lastError.message.includes("usage limit")) {
+					if (
+						attempt < maxRetries &&
+						!(lastError instanceof RetryDelayExceededError) &&
+						!lastError.message.includes("usage limit")
+					) {
 						const delayMs = BASE_DELAY_MS * 2 ** attempt;
 						await sleep(delayMs, options?.signal);
 						continue;
@@ -432,7 +453,10 @@ export const stream: StreamFunction<"openai-codex-responses", OpenAICodexRespons
 				throw new Error("No response body");
 			}
 
-			stream.push({ type: "start", partial: output });
+			if (!startEmitted) {
+				startEmitted = true;
+				stream.push({ type: "start", partial: output });
+			}
 			await processStream(response, output, stream, model, options);
 
 			if (options?.signal?.aborted) {
@@ -634,6 +658,10 @@ function isCodexNonTransportError(error: unknown): boolean {
 
 function isWebSocketConnectionLimitReachedError(error: unknown): boolean {
 	return error instanceof CodexApiError && error.code === WEBSOCKET_CONNECTION_LIMIT_REACHED_CODE;
+}
+
+function isPreviousResponseNotFoundError(error: unknown): boolean {
+	return error instanceof CodexApiError && error.code === PREVIOUS_RESPONSE_NOT_FOUND_CODE;
 }
 
 function extractCodexEventError(event: Record<string, unknown>): { code?: string; message?: string } {
@@ -1358,8 +1386,6 @@ function buildCachedWebSocketRequestBody(entry: CachedWebSocketConnection, body:
 
 async function* startWebSocketOutputOnFirstEvent(
 	events: AsyncIterable<ResponseStreamEvent>,
-	output: AssistantMessage,
-	stream: AssistantMessageEventStream,
 	onStart: () => void,
 ): AsyncGenerator<ResponseStreamEvent> {
 	let started = false;
@@ -1367,7 +1393,6 @@ async function* startWebSocketOutputOnFirstEvent(
 		if (!started) {
 			started = true;
 			onStart();
-			stream.push({ type: "start", partial: output });
 		}
 		yield event;
 	}
@@ -1422,8 +1447,6 @@ async function processWebSocketStream(
 		await processResponsesStream(
 			startWebSocketOutputOnFirstEvent(
 				mapCodexEvents(parseWebSocket(socket, options?.signal, idleTimeoutMs)),
-				output,
-				stream,
 				onStart,
 			),
 			output,

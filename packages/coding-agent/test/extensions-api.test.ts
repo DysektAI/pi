@@ -51,7 +51,7 @@ describe("ExtensionAPI.getExtensions", () => {
 			}
 
 			const session = new AgentSession({
-				agent: new Agent({ streamFunction: unusedStreamFunction, initialState: { systemPrompt: "", tools: [] } }),
+				agent: new Agent({ streamFn: unusedStreamFunction, initialState: { systemPrompt: "", tools: [] } }),
 				sessionManager: SessionManager.inMemory(),
 				settingsManager: SettingsManager.create(tempDir, tempDir),
 				cwd: tempDir,

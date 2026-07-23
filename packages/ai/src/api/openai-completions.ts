@@ -38,6 +38,7 @@ import { shortHash } from "../utils/hash.ts";
 import { headersToRecord } from "../utils/headers.ts";
 import { parseStreamingJson } from "../utils/json-parse.ts";
 import { getProviderEnvValue } from "../utils/provider-env.ts";
+import { retryProviderRequest } from "../utils/provider-retry.ts";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.ts";
 import { buildCopilotDynamicHeaders, hasCopilotVisionInput } from "./github-copilot-headers.ts";
 import { clampOpenAIPromptCacheKey } from "./openai-prompt-cache.ts";
@@ -232,11 +233,16 @@ export const stream: StreamFunction<"openai-completions", OpenAICompletionsOptio
 			const requestOptions = {
 				...(options?.signal ? { signal: options.signal } : {}),
 				...(options?.timeoutMs !== undefined ? { timeout: options.timeoutMs } : {}),
-				maxRetries: options?.maxRetries ?? 0,
+				maxRetries: 0,
 			};
-			const { data: openaiStream, response } = await client.chat.completions
-				.create(params, requestOptions)
-				.withResponse();
+			const { data: openaiStream, response } = await retryProviderRequest(
+				() => client.chat.completions.create(params, requestOptions).withResponse(),
+				{
+					maxRetries: options?.maxRetries,
+					maxRetryDelayMs: options?.maxRetryDelayMs,
+					signal: options?.signal,
+				},
+			);
 			await options?.onResponse?.({ status: response.status, headers: headersToRecord(response.headers) }, model);
 			stream.push({ type: "start", partial: output });
 
@@ -822,7 +828,7 @@ function addCacheControlToLastConversationMessage(
 ): void {
 	for (let i = messages.length - 1; i >= 0; i--) {
 		const message = messages[i];
-		if (message.role === "user" || message.role === "assistant") {
+		if (message.role === "user" || message.role === "assistant" || message.role === "tool") {
 			if (addCacheControlToMessage(message, cacheControl)) {
 				return;
 			}
@@ -853,7 +859,7 @@ function addCacheControlToMessage(
 	message: ChatCompletionMessageParam,
 	cacheControl: OpenAICompatCacheControl,
 ): boolean {
-	if (message.role === "user" || message.role === "assistant") {
+	if (message.role === "user" || message.role === "assistant" || message.role === "tool") {
 		return addCacheControlToTextContent(message, cacheControl);
 	}
 	return false;
@@ -863,6 +869,7 @@ function addCacheControlToTextContent(
 	message:
 		| ChatCompletionInstructionMessageParam
 		| ChatCompletionAssistantMessageParam
+		| ChatCompletionToolMessageParam
 		| Extract<ChatCompletionMessageParam, { role: "user" }>,
 	cacheControl: OpenAICompatCacheControl,
 ): boolean {

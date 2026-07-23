@@ -1,4 +1,5 @@
 // Core Agent
+export { uuidv7 } from "@earendil-works/pi-ai";
 export * from "./agent.ts";
 // Loop functions
 export * from "./agent-loop.ts";
@@ -44,11 +45,14 @@ export * from "./harness/session/repo-utils.ts";
 export * from "./harness/session/session.ts";
 export * from "./harness/skills.ts";
 export * from "./harness/system-prompt.ts";
+export * from "./harness/tools/index.ts";
 // Harness
 export * from "./harness/types.ts";
 export * from "./harness/utils/shell-output.ts";
 export * from "./harness/utils/truncate.ts";
 // Proxy utilities
 export * from "./proxy.ts";
+// Stream defaults
+export { setDefaultStreamFn } from "./stream-fn.ts";
 // Types
 export * from "./types.ts";

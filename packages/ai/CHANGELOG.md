@@ -45,6 +45,8 @@
 - Fixed OpenAI Responses early stream endings to be classified as retryable provider errors ([#6727](https://github.com/earendil-works/pi/issues/6727)).
 - Fixed sessionless OpenAI Codex WebSocket requests to use UUIDv7 request IDs, enabling models that reject UUIDv4 IDs.
 - Fixed GPT-5.6 Codex models to default to the 272K context window, avoiding automatic long-context pricing ([#6838](https://github.com/earendil-works/pi/issues/6838)).
+- Fixed OpenAI and Anthropic provider retry waits to honor abort signals and configured delay limits ([#6911](https://github.com/earendil-works/pi/issues/6911)).
+- Fixed OpenRouter Anthropic cache breakpoints to advance through tool results and enabled cache control for `~anthropic/*-latest` aliases ([#6941](https://github.com/earendil-works/pi/pull/6941) by [@mteam88](https://github.com/mteam88)).
 
 ## [0.80.6] - 2026-07-09
 
