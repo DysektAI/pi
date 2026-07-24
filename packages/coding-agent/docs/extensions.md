@@ -1556,6 +1556,31 @@ Use `sourceInfo` as the canonical provenance field. Do not infer ownership from 
 Built-in interactive commands (like `/model` and `/settings`) are not included here. They are handled only in interactive
 mode and would not execute if sent via `prompt`.
 
+### pi.getExtensions()
+
+Get a snapshot of the extensions loaded in the current session, with canonical scope/source metadata. The result reflects the active resource loader, including changes after `/reload`, and may be safely modified by the caller without changing Pi's internal state.
+
+```typescript
+const extensions = pi.getExtensions();
+const userExtensions = extensions.filter((extension) => extension.scope === "user");
+const packageExtensions = extensions.filter((extension) => extension.scope === "package");
+```
+
+Each entry has this shape:
+
+```typescript
+{
+  name: string;
+  path: string;
+  scope: "project" | "user" | "package" | "cli";
+  source?: string;
+}
+```
+
+`name` is a display name derived from the entry-point filename, parent directory for `index.ts`/`index.js` extensions, package source for a package-root index, or inline identifier. `scope` is normalized for extension consumers: temporary/inline or `-e` entries use `"cli"`, and package-provided entries use `"package"` regardless of whether the package is installed in project or user configuration. `source` preserves the loader identifier, such as `local`, `npm:<package>`, `git:<repository>`, or `cli`.
+
+This API reports successfully loaded extensions only. Loader diagnostics remain internal to resource loading and startup reporting.
+
 ### pi.registerMessageRenderer(customType, renderer)
 
 Register a custom TUI renderer for custom messages with your `customType`. Custom messages are created with `pi.sendMessage()` and participate in LLM context. See [Custom UI](#custom-ui).

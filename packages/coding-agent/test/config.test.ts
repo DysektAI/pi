@@ -159,6 +159,7 @@ describe("detectInstallMethod", () => {
 
 	test("does not self-update unknown wrapper installs", () => {
 		setExecPath("/usr/local/bin/node");
+		process.env.PI_PACKAGE_DIR = "/opt/pi-wrapper";
 
 		expect(detectInstallMethod()).toBe("unknown");
 		expect(getSelfUpdateCommand("@earendil-works/pi-coding-agent")).toBeUndefined();

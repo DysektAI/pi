@@ -19,6 +19,7 @@ import type {
 	Api,
 	AssistantMessageEvent,
 	AssistantMessageEventStream,
+	ConstrainedSamplingConfig,
 	Context,
 	ImageContent,
 	Model,
@@ -452,6 +453,8 @@ export interface ToolDefinition<TParams extends TSchema = TSchema, TDetails = un
 	promptGuidelines?: string[];
 	/** Parameter schema (TypeBox) */
 	parameters: TParams;
+	/** Optional provider-side constrained sampling request for this tool. Set false to explicitly disable it, equivalent to leaving it undefined. */
+	constrainedSampling?: false | ConstrainedSamplingConfig;
 	/** Controls whether ToolExecutionComponent renders the standard colored shell or the tool renders its own framing. */
 	renderShell?: "default" | "self";
 
@@ -1311,6 +1314,9 @@ export interface ExtensionAPI {
 	/** Get all configured tools with parameter schema, prompt guidelines, and source metadata. */
 	getAllTools(): ToolInfo[];
 
+	/** Get a snapshot of the extensions loaded in the current session, including canonical scope/source metadata. */
+	getExtensions(): LoadedExtensionInfo[];
+
 	/** Set the active tools by name. */
 	setActiveTools(toolNames: string[]): void;
 
@@ -1544,6 +1550,23 @@ export type ToolInfo = Pick<ToolDefinition, "name" | "description" | "parameters
 
 export type GetAllToolsHandler = () => ToolInfo[];
 
+/** Public extension scope, with package and CLI sources represented explicitly. */
+export type LoadedExtensionScope = "project" | "user" | "package" | "cli";
+
+/** Metadata for an extension loaded in the current session. */
+export interface LoadedExtensionInfo {
+	/** Human-readable extension name derived from its entry point or package/inline identifier. */
+	name: string;
+	/** Resolved extension entry-point path, or an inline extension identifier. */
+	path: string;
+	/** Canonical source scope. Package takes precedence over its installation scope. */
+	scope: LoadedExtensionScope;
+	/** Loader source identifier, such as `local`, `npm:<package>`, `git:<repository>`, or `cli`. */
+	source?: string;
+}
+
+export type GetExtensionsHandler = () => LoadedExtensionInfo[];
+
 export type GetCommandsHandler = () => SlashCommandInfo[];
 
 export type SetActiveToolsHandler = (toolNames: string[]) => void;
@@ -1596,6 +1619,7 @@ export interface ExtensionActions {
 	setLabel: SetLabelHandler;
 	getActiveTools: GetActiveToolsHandler;
 	getAllTools: GetAllToolsHandler;
+	getExtensions: GetExtensionsHandler;
 	setActiveTools: SetActiveToolsHandler;
 	refreshTools: RefreshToolsHandler;
 	getCommands: GetCommandsHandler;

@@ -280,6 +280,14 @@ export async function resolveModelScopeWithDiagnostics(
 	for (const pattern of patterns) {
 		// Check if pattern contains glob characters
 		if (pattern.includes("*") || pattern.includes("?") || pattern.includes("[")) {
+			const fullExactMatch = findExactModelReferenceMatch(pattern, availableModels);
+			if (fullExactMatch) {
+				if (!scopedModels.find((sm) => modelsAreEqual(sm.model, fullExactMatch))) {
+					scopedModels.push({ model: fullExactMatch });
+				}
+				continue;
+			}
+
 			// Extract optional thinking level suffix (e.g., "provider/*:high")
 			const colonIdx = pattern.lastIndexOf(":");
 			let globPattern = pattern;

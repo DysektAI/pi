@@ -1,0 +1,81 @@
+name: Fork sync
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 */6 * * *"
+
+permissions: {}
+
+concurrency:
+  group: fork-sync
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    if: github.repository == 'DysektAI/pi'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: local
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Configure repository
+        run: |
+          git config user.name "fork-sync[bot]"
+          git config user.email "fork-sync[bot]@users.noreply.github.com"
+          git remote add upstream https://github.com/earendil-works/pi.git 2>/dev/null || \
+            git remote set-url upstream https://github.com/earendil-works/pi.git
+
+      - name: Merge and validate without credentials
+        env:
+          FORK_SYNC_NPM_CI: "1"
+        run: ./fork-sync.sh --no-push
+
+      - name: Bundle validated refs
+        run: git bundle create fork-sync.bundle local main
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: validated-fork-sync
+          path: fork-sync.bundle
+          if-no-files-found: error
+
+  publish:
+    needs: validate
+    if: github.repository == 'DysektAI/pi'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: local
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: validated-fork-sync
+
+      - name: Publish validated refs
+        run: |
+          git config core.hooksPath /dev/null
+          git bundle verify fork-sync.bundle
+          git fetch fork-sync.bundle local:refs/remotes/validated/local main:refs/remotes/validated/main
+          git merge-base --is-ancestor origin/local refs/remotes/validated/local || {
+            echo "local advanced after validation; refusing stale publish" >&2
+            exit 1
+          }
+          git push origin +refs/remotes/validated/main:main refs/remotes/validated/local:local

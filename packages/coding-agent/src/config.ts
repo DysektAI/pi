@@ -26,7 +26,7 @@ export const isBunRuntime = !!process.versions.bun;
 // Install Method Detection
 // =============================================================================
 
-export type InstallMethod = "bun-binary" | "npm" | "pnpm" | "yarn" | "bun" | "unknown";
+export type InstallMethod = "bun-binary" | "npm" | "pnpm" | "yarn" | "bun" | "source" | "unknown";
 
 interface SelfUpdateCommandStep {
 	command: string;
@@ -70,6 +70,23 @@ function makeSelfUpdateCommandStep(command: string, args: string[]): SelfUpdateC
 	};
 }
 
+function findSourceCheckoutRoot(): string | undefined {
+	// Use the executable entrypoint rather than this module's source location so
+	// tests and wrappers can model non-source installs from inside the repository.
+	let dir = dirname(process.env.PI_PACKAGE_DIR || process.argv[1] || process.execPath || __dirname);
+	for (let i = 0; i < 8; i++) {
+		if (existsSync(join(dir, ".git"))) return dir;
+		const parent = dirname(dir);
+		if (parent === dir) break;
+		dir = parent;
+	}
+	return undefined;
+}
+
+function isSourceCheckout(): boolean {
+	return findSourceCheckoutRoot() !== undefined;
+}
+
 export function detectInstallMethod(): InstallMethod {
 	if (isBunBinary) {
 		return "bun-binary";
@@ -89,6 +106,9 @@ export function detectInstallMethod(): InstallMethod {
 	if (resolvedPath.includes("/npm/") || resolvedPath.includes("/node_modules/")) {
 		return "npm";
 	}
+
+	// Detect source checkout (e.g. ~/pi-fork/packages/coding-agent)
+	if (isSourceCheckout()) return "source";
 
 	return "unknown";
 }
@@ -181,6 +201,20 @@ function getSelfUpdateCommandForMethod(
 					: makeSelfUpdateCommandStep(command, [...prefixArgs, "uninstall", "-g", installedPackageName]);
 			return makeSelfUpdateCommand(installStep, uninstallStep);
 		}
+		case "source": {
+			const repoRoot = findSourceCheckoutRoot();
+			if (!repoRoot) return undefined;
+			const switchBranch = makeSelfUpdateCommandStep("git", ["-C", repoRoot, "switch", "local"]);
+			const fetch = makeSelfUpdateCommandStep("git", ["-C", repoRoot, "fetch", "origin", "local"]);
+			const update = makeSelfUpdateCommandStep("git", ["-C", repoRoot, "merge", "--ff-only", "origin/local"]);
+			const install = makeSelfUpdateCommandStep("npm", ["--prefix", repoRoot, "ci", "--ignore-scripts"]);
+			const build = makeSelfUpdateCommandStep("npm", ["--prefix", repoRoot, "run", "build"]);
+			return {
+				...fetch,
+				display: [switchBranch, fetch, update, install, build].map((step) => step.display).join(" && "),
+				steps: [switchBranch, fetch, update, install, build],
+			};
+		}
 		case "unknown":
 			return undefined;
 	}
@@ -243,6 +277,7 @@ function getGlobalPackageRoots(method: InstallMethod, _packageName: string, npmC
 			return roots;
 		}
 		case "bun-binary":
+		case "source":
 		case "unknown":
 			return [];
 	}
@@ -302,6 +337,7 @@ function isSelfUpdatePathWritable(): boolean {
 }
 
 function isManagedByGlobalPackageManager(method: InstallMethod, packageName: string, npmCommand?: string[]): boolean {
+	if (method === "source") return isSourceCheckout();
 	const packageDirs = [getPackageDir(), getEntrypointPackageDir()].filter((dir): dir is string => !!dir);
 	const packageDirCandidates = packageDirs.flatMap((dir) => getPathComparisonCandidates(dir));
 	return getGlobalPackageRoots(method, packageName, npmCommand).some((root) => {
@@ -489,7 +525,17 @@ export const PACKAGE_NAME: string = pkg.name || "@earendil-works/pi-coding-agent
 export const APP_NAME: string = piConfigName || "pi";
 export const APP_TITLE: string = piConfigName ? APP_NAME : "π";
 export const CONFIG_DIR_NAME: string = pkg.piConfig?.configDir || ".pi";
-export const VERSION: string = pkg.version || "0.0.0";
+const sourceVersionPath = findSourceCheckoutRoot();
+const sourceVersion = sourceVersionPath
+	? (() => {
+			try {
+				return readFileSync(join(sourceVersionPath, ".fork", "local-version"), "utf-8").trim() || undefined;
+			} catch {
+				return undefined;
+			}
+		})()
+	: undefined;
+export const VERSION: string = sourceVersion || pkg.version || "0.0.0";
 
 // e.g., PI_CODING_AGENT_DIR or TAU_CODING_AGENT_DIR
 export const ENV_AGENT_DIR = `${APP_NAME.toUpperCase()}_CODING_AGENT_DIR`;

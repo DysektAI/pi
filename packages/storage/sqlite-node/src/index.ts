@@ -1,6 +1,13 @@
+import { resolve } from "node:path";
 import type { SQLInputValue } from "node:sqlite";
 import { DatabaseSync } from "node:sqlite";
 import type { SqliteDatabase, SqliteDatabaseFactory, SqliteRunResult, SqliteStatement } from "./sqlite/types.ts";
+
+interface TransactionQueue {
+	tail: Promise<void>;
+}
+
+const transactionQueues = new Map<string, TransactionQueue>();
 
 function isNamedParameters(value: unknown): value is Record<string, SQLInputValue> {
 	if (value === null || typeof value !== "object") return false;
@@ -47,9 +54,11 @@ class NodeSqliteStatement implements SqliteStatement {
 
 class NodeSqliteDatabase implements SqliteDatabase {
 	private readonly db: DatabaseSync;
+	private readonly transactionQueue: TransactionQueue;
 
-	constructor(db: DatabaseSync) {
+	constructor(db: DatabaseSync, transactionQueue: TransactionQueue = { tail: Promise.resolve() }) {
 		this.db = db;
+		this.transactionQueue = transactionQueue;
 	}
 
 	async exec(sql: string): Promise<void> {
@@ -61,18 +70,28 @@ class NodeSqliteDatabase implements SqliteDatabase {
 	}
 
 	async transaction<T>(fn: () => Promise<T>): Promise<T> {
-		this.db.exec("BEGIN");
+		const previous = this.transactionQueue.tail;
+		let release: () => void = () => {};
+		this.transactionQueue.tail = new Promise<void>((resolveQueue) => {
+			release = resolveQueue;
+		});
+		await previous;
 		try {
-			const result = await fn();
-			this.db.exec("COMMIT");
-			return result;
-		} catch (error) {
+			this.db.exec("BEGIN IMMEDIATE");
 			try {
-				this.db.exec("ROLLBACK");
-			} catch {
-				// Ignore rollback errors to rethrow original error.
+				const result = await fn();
+				this.db.exec("COMMIT");
+				return result;
+			} catch (error) {
+				try {
+					this.db.exec("ROLLBACK");
+				} catch {
+					// Ignore rollback errors to rethrow original error.
+				}
+				throw error;
 			}
-			throw error;
+		} finally {
+			release();
 		}
 	}
 
@@ -88,7 +107,16 @@ export function wrapNodeSqliteDatabase(db: DatabaseSync): SqliteDatabase {
 export function createNodeSqliteFactory(): SqliteDatabaseFactory {
 	return {
 		async open(path: string): Promise<SqliteDatabase> {
-			return new NodeSqliteDatabase(new DatabaseSync(path));
+			const queueKey = path === ":memory:" ? undefined : resolve(path);
+			let queue: TransactionQueue | undefined;
+			if (queueKey) {
+				queue = transactionQueues.get(queueKey);
+				if (!queue) {
+					queue = { tail: Promise.resolve() };
+					transactionQueues.set(queueKey, queue);
+				}
+			}
+			return new NodeSqliteDatabase(new DatabaseSync(path), queue);
 		},
 	};
 }

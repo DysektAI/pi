@@ -1,9 +1,11 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { pathToFileURL } from "node:url";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import {
 	type EditorTheme,
 	getCapabilities,
+	hyperlink,
 	type MarkdownTheme,
 	type RgbColor,
 	type SelectListTheme,
@@ -15,7 +17,9 @@ import { Compile } from "typebox/compile";
 import { getCustomThemesDir, getThemesDir } from "../../../config.ts";
 import type { SourceInfo } from "../../../core/source-info.ts";
 import { closeWatcher, watchWithErrorHandler } from "../../../utils/fs-watch.ts";
+import { resolvePath } from "../../../utils/paths.ts";
 import { highlight, supportsLanguage } from "../../../utils/syntax-highlight.ts";
+import { isVscodeTerminal } from "../../../utils/terminal.ts";
 
 // ============================================================================
 // Types & Schema
@@ -92,6 +96,8 @@ const ThemeJsonSchema = Type.Object({
 		thinkingMax: Type.Optional(ColorValueSchema),
 		// Bash Mode (1 color)
 		bashMode: ColorValueSchema,
+		// Tool path color (optional; falls back to accent when omitted)
+		toolPath: Type.Optional(ColorValueSchema),
 	}),
 	export: Type.Optional(
 		Type.Object({
@@ -152,7 +158,8 @@ export type ThemeColor =
 	| "thinkingHigh"
 	| "thinkingXhigh"
 	| "thinkingMax"
-	| "bashMode";
+	| "bashMode"
+	| "toolPath";
 
 export type ThemeBg =
 	| "selectedBg"
@@ -327,9 +334,21 @@ function withThemeColorFallbacks(colors: ThemeJson["colors"]): ThemeJson["colors
 // Theme Class
 // ============================================================================
 
+/**
+ * An optional theme token that a loaded theme did not define, along with the
+ * fallback token used in its place. Surfaced at startup as a non-fatal hint so
+ * users can opt into the new color.
+ */
+export interface MissingOptionalToken {
+	token: ThemeColor;
+	fallback: ThemeColor;
+	note: string;
+}
+
 export class Theme {
 	readonly name?: string;
 	readonly sourcePath?: string;
+	readonly missingOptionalTokens: readonly MissingOptionalToken[];
 	sourceInfo?: SourceInfo;
 	private fgColors: Map<ThemeColor, string>;
 	private bgColors: Map<ThemeBg, string>;
@@ -339,11 +358,17 @@ export class Theme {
 		fgColors: Record<ThemeColor, string | number>,
 		bgColors: Record<ThemeBg, string | number>,
 		mode: ColorMode,
-		options: { name?: string; sourcePath?: string; sourceInfo?: SourceInfo } = {},
+		options: {
+			name?: string;
+			sourcePath?: string;
+			sourceInfo?: SourceInfo;
+			missingOptionalTokens?: readonly MissingOptionalToken[];
+		} = {},
 	) {
 		this.name = options.name;
 		this.sourcePath = options.sourcePath;
 		this.sourceInfo = options.sourceInfo;
+		this.missingOptionalTokens = options.missingOptionalTokens ?? [];
 		this.mode = mode;
 		this.fgColors = new Map();
 		const colors = { ...fgColors, thinkingMax: fgColors.thinkingMax ?? fgColors.thinkingXhigh };
@@ -594,9 +619,41 @@ function loadThemeJson(name: string): ThemeJson {
 	return parseThemeJsonContent(name, content);
 }
 
+// ============================================================================
+// Optional Theme Tokens
+// ============================================================================
+
+/**
+ * Theme color tokens that are optional for backward compatibility: themes
+ * authored before the token was introduced still load, and the token resolves
+ * to a documented fallback. Each entry records the fallback token used and a
+ * short note so the missing-token startup warning is actionable.
+ */
+const OPTIONAL_THEME_TOKENS: ReadonlyArray<{
+	token: ThemeColor;
+	fallback: ThemeColor;
+	note: string;
+}> = [
+	{
+		token: "toolPath",
+		fallback: "accent",
+		note: "file paths in built-in file tool titles",
+	},
+	{
+		token: "thinkingMax",
+		fallback: "thinkingXhigh",
+		note: "the 'max' thinking level border",
+	},
+];
+
 function createTheme(themeJson: ThemeJson, mode?: ColorMode, sourcePath?: string): Theme {
 	const colorMode = mode ?? (getCapabilities().trueColor ? "truecolor" : "256color");
 	const resolvedColors = resolveThemeColors(withThemeColorFallbacks(themeJson.colors), themeJson.vars);
+	const missingOptionalTokens: MissingOptionalToken[] = [];
+	// toolPath is an optional token; fall back to accent so existing themes render unchanged.
+	if (themeJson.colors.toolPath === undefined) {
+		resolvedColors.toolPath = resolvedColors.accent;
+	}
 	const fgColors: Record<ThemeColor, string | number> = {} as Record<ThemeColor, string | number>;
 	const bgColors: Record<ThemeBg, string | number> = {} as Record<ThemeBg, string | number>;
 	const bgColorKeys: Set<string> = new Set([
@@ -614,9 +671,18 @@ function createTheme(themeJson: ThemeJson, mode?: ColorMode, sourcePath?: string
 			fgColors[key as ThemeColor] = value;
 		}
 	}
+	// Record which optional tokens the theme omitted so startup can surface a
+	// non-fatal hint. `colors` is the authored token set, so a missing key here
+	// means the theme relied on the fallback rather than picking its own color.
+	for (const { token, fallback, note } of OPTIONAL_THEME_TOKENS) {
+		if (themeJson.colors[token] === undefined) {
+			missingOptionalTokens.push({ token, fallback, note });
+		}
+	}
 	return new Theme(fgColors, bgColors, colorMode, {
 		name: themeJson.name,
 		sourcePath,
+		missingOptionalTokens,
 	});
 }
 
@@ -815,6 +881,27 @@ function setGlobalTheme(t: Theme): void {
 	(globalThis as Record<symbol, Theme>)[THEME_KEY_OLD] = t;
 }
 
+/**
+ * Build a non-fatal startup warning when a user-authored theme omits optional
+ * color tokens the app now supports. Built-in themes (no `sourcePath`) always
+ * define every token, so they are skipped. Returns `undefined` when there is
+ * nothing to warn about.
+ */
+export function getThemeMissingTokenWarning(activeTheme: Theme = theme): string | undefined {
+	// Only user-authored themes (loaded from a file) can lag behind new tokens.
+	if (!activeTheme.sourcePath) return undefined;
+	const missing = activeTheme.missingOptionalTokens;
+	if (missing.length === 0) return undefined;
+
+	const label = activeTheme.name ? `"${activeTheme.name}"` : "your custom theme";
+	const lines = missing.map(({ token, fallback, note }) => `  - ${token}: using ${fallback} (controls ${note})`);
+	return (
+		`Theme ${label} is missing optional color tokens:\n${lines.join("\n")}\n` +
+		`Add them to ${activeTheme.sourcePath} to pick your own colors. ` +
+		`See the built-in themes (dark.json, light.json) for reference values.`
+	);
+}
+
 let currentThemeName: string | undefined;
 let themeWatcher: fs.FSWatcher | undefined;
 let themeReloadTimer: NodeJS.Timeout | undefined;
@@ -831,7 +918,7 @@ export function setRegisteredThemes(themes: Theme[]): void {
 	}
 }
 
-export function initTheme(themeName?: string, enableWatcher: boolean = false): void {
+export function initTheme(themeName?: string, enableWatcher: boolean = false): { fallback?: string } {
 	const name = themeName ?? getDefaultTheme();
 	currentThemeName = name;
 	try {
@@ -839,11 +926,13 @@ export function initTheme(themeName?: string, enableWatcher: boolean = false): v
 		if (enableWatcher) {
 			startThemeWatcher();
 		}
-	} catch (_error) {
-		// Theme is invalid - fall back to dark theme silently
+		return {};
+	} catch (error) {
+		// Theme is invalid - fall back to dark theme
 		currentThemeName = "dark";
 		setGlobalTheme(loadTheme("dark"));
-		// Don't start watcher for fallback theme
+		const message = error instanceof Error ? error.message : String(error);
+		return { fallback: `Theme "${name}" failed to load: ${message}. Using dark theme.` };
 	}
 }
 
@@ -1227,12 +1316,70 @@ export function getLanguageFromPath(filePath: string): string | undefined {
 	return extToLang[ext];
 }
 
-export function getMarkdownTheme(): MarkdownTheme {
+const inlineCodePathExistsCache = new Map<string, boolean>();
+
+// Detect whether a markdown inline-code span refers to a real file on disk.
+// Returns the resolved absolute path when it exists, otherwise undefined. Any
+// trailing line/column locator (`:42`, `:42:7`, `:1-5`, `#L9`) is stripped
+// before the existence check. Existence is required so that non-path inline
+// code (shell commands, function calls, identifiers) is never linkified.
+// Positive results are cached.
+function resolveInlineCodePath(raw: string, cwd: string): string | undefined {
+	const match = raw.match(/^(.+?)((?::\d+(?:-\d+)?)|(?::\d+:\d+)|(?:#L\d+))$/);
+	const bare = match ? match[1] : raw;
+	if (!bare || /\s/.test(bare)) return undefined;
+	const looksPathish =
+		bare.startsWith("/") ||
+		bare.startsWith("~") ||
+		bare.startsWith("./") ||
+		bare.startsWith("../") ||
+		bare.includes("/") ||
+		/^[\w.-]+\.[a-zA-Z][a-zA-Z0-9]*$/.test(bare);
+	if (!looksPathish) return undefined;
+	const absolutePath = resolvePath(bare, cwd);
+	if (inlineCodePathExistsCache.get(absolutePath)) return absolutePath;
+	let exists = false;
+	try {
+		exists = fs.existsSync(absolutePath);
+	} catch {
+		exists = false;
+	}
+	if (!exists) return undefined;
+	inlineCodePathExistsCache.set(absolutePath, true);
+	return absolutePath;
+}
+
+// Render markdown inline code. When the span resolves to a real file, color it
+// with toolPath so it matches clickable tool paths. Everything else falls back
+// to the mdCode color.
+//
+// Link handling differs by terminal:
+//   - VS Code integrated terminal: emit styled PLAIN TEXT (no OSC 8). VS Code's
+//     built-in terminal link detector finds existing-file paths and opens them
+//     in the current window's editor, with :line:col support, and resolves them
+//     inside the active (incl. Remote-WSL) workspace. Wrapping the path in an
+//     OSC 8 hyperlink instead routes it to the URI/protocol handler, which under
+//     Remote-WSL hands the Linux path to the Windows host ("file not found"/0x2)
+//     or opens a new window at the folder rather than the file.
+//   - Other terminals: emit an OSC 8 file:// hyperlink when supported.
+function renderInlineCode(text: string, cwd: string): string {
+	const resolved = resolveInlineCodePath(text, cwd);
+	if (resolved) {
+		const styled = theme.fg("toolPath", theme.underline(text));
+		if (isVscodeTerminal()) {
+			return styled;
+		}
+		return getCapabilities().hyperlinks ? hyperlink(styled, pathToFileURL(resolved).href) : styled;
+	}
+	return theme.fg("mdCode", text);
+}
+
+export function getMarkdownTheme(cwd: string = process.cwd()): MarkdownTheme {
 	return {
 		heading: (text: string) => theme.fg("mdHeading", text),
 		link: (text: string) => theme.fg("mdLink", text),
 		linkUrl: (text: string) => theme.fg("mdLinkUrl", text),
-		code: (text: string) => theme.fg("mdCode", text),
+		code: (text: string) => renderInlineCode(text, cwd),
 		codeBlock: (text: string) => theme.fg("mdCodeBlock", text),
 		codeBlockBorder: (text: string) => theme.fg("mdCodeBlockBorder", text),
 		quote: (text: string) => theme.fg("mdQuote", text),

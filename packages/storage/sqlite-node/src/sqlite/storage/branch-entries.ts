@@ -53,5 +53,16 @@ export async function getMaterializedBranchPathOrCompaction(
 			throw invalidSession(`invalid entry row for branch entry ${branchRow.entry_id}`);
 		}
 	}
-	return entries;
+	const bounded: SessionTreeEntry[] = [];
+	let stopAtEntryId: string | null = null;
+	for (let index = entries.length - 1; index >= 0; index--) {
+		const entry = entries[index];
+		bounded.unshift(entry);
+		if (stopAtEntryId !== null && entry.id === stopAtEntryId) break;
+		if (entry.type === "compaction") {
+			if (entry.retainedTail) break;
+			stopAtEntryId = entry.firstKeptEntryId ?? null;
+		}
+	}
+	return bounded;
 }

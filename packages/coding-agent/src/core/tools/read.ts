@@ -73,7 +73,10 @@ function formatReadLineRange(args: ReadRenderArgs | undefined, theme: Theme): st
 
 function formatReadCall(args: ReadRenderArgs | undefined, theme: Theme, cwd: string): string {
 	const pathDisplay = renderToolPath(str(args?.file_path ?? args?.path), theme, cwd);
-	return `${theme.fg("toolTitle", theme.bold("read"))} ${pathDisplay}${formatReadLineRange(args, theme)}`;
+	// Header on its own line, then the path beneath, matching the bash tool layout
+	// so the call reads as a labeled tool invocation rather than "read" inline.
+	const header = theme.fg("toolTitle", theme.bold("[Read Tool]"));
+	return `${header}\n${theme.fg("toolTitle", pathDisplay)}${formatReadLineRange(args, theme)}`;
 }
 
 function trimTrailingEmptyLines(lines: string[]): string[] {
@@ -290,7 +293,8 @@ export function createReadToolDefinition(
 								if (truncation.firstLineExceedsLimit) {
 									// First line alone exceeds the byte limit. Point the model at a bash fallback.
 									const firstLineSize = formatSize(Buffer.byteLength(allLines[startLine], "utf-8"));
-									outputText = `[Line ${startLineDisplay} is ${firstLineSize}, exceeds ${formatSize(DEFAULT_MAX_BYTES)} limit. Use bash: sed -n '${startLineDisplay}p' ${path} | head -c ${DEFAULT_MAX_BYTES}]`;
+									const quotedPath = `'${path.replaceAll("'", "'\\''")}'`;
+									outputText = `[Line ${startLineDisplay} is ${firstLineSize}, exceeds ${formatSize(DEFAULT_MAX_BYTES)} limit. Use bash: sed -n '${startLineDisplay}p' ${quotedPath} | head -c ${DEFAULT_MAX_BYTES}]`;
 									details = { truncation };
 								} else if (truncation.truncated) {
 									// Truncation occurred. Build an actionable continuation notice.

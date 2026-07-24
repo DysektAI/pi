@@ -131,7 +131,10 @@ export class AssistantMessageComponent extends Container {
 						new Text(theme.italic(theme.fg("thinkingText", this.hiddenThinkingLabel)), this.outputPad, 0),
 					);
 				} else {
-					// Render each run of thinking blocks as one Markdown section.
+					// Label each coalesced thinking run so the normalized reasoning channel is explicit.
+					this.contentContainer.addChild(
+						new Text(theme.bold(theme.fg("thinkingText", "[Thinking]")), this.outputPad, 0),
+					);
 					this.contentContainer.addChild(
 						new Markdown(thinkingBlocks.join("\n\n"), this.outputPad, 0, this.markdownTheme, {
 							color: (text: string) => theme.fg("thinkingText", text),

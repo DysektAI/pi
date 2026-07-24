@@ -18,4 +18,31 @@ describe("sqlite-node adapter", () => {
 			await db.close();
 		}
 	});
+
+	it("serializes transactions opened through separate wrappers", async () => {
+		const root = createTempDir();
+		const databasePath = join(root, "transactions.sqlite");
+		const sqlite = createNodeSqliteFactory();
+		const first = await sqlite.open(databasePath);
+		const second = await sqlite.open(databasePath);
+		try {
+			await first.exec("CREATE TABLE counters (value INTEGER NOT NULL)");
+			await first.prepare("INSERT INTO counters (value) VALUES (0)").run();
+			await Promise.all(
+				[first, second].map((db) =>
+					db.transaction(async () => {
+						const row = await db.prepare("SELECT value FROM counters").get<{ value: number }>();
+						await Promise.resolve();
+						await db.prepare("UPDATE counters SET value = ?").run((row?.value ?? 0) + 1);
+					}),
+				),
+			);
+			await expect(first.prepare("SELECT value FROM counters").get<{ value: number }>()).resolves.toEqual({
+				value: 2,
+			});
+		} finally {
+			await first.close();
+			await second.close();
+		}
+	});
 });

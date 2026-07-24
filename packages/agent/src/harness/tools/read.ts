@@ -118,7 +118,8 @@ export function createReadTool<TContext extends ExecutionToolContext = Execution
 			let details: ReadToolDetails | undefined;
 			if (truncation.firstLineExceedsLimit) {
 				const firstLineSize = formatSize(new TextEncoder().encode(allLines[startLine]).byteLength);
-				outputText = `[Line ${startLineDisplay} is ${firstLineSize}, exceeds ${formatSize(DEFAULT_MAX_BYTES)} limit. Use bash: sed -n '${startLineDisplay}p' ${path} | head -c ${DEFAULT_MAX_BYTES}]`;
+				const quotedPath = `'${path.replaceAll("'", "'\\''")}'`;
+				outputText = `[Line ${startLineDisplay} is ${firstLineSize}, exceeds ${formatSize(DEFAULT_MAX_BYTES)} limit. Use bash: sed -n '${startLineDisplay}p' ${quotedPath} | head -c ${DEFAULT_MAX_BYTES}]`;
 				details = { truncation };
 			} else if (truncation.truncated) {
 				const endLineDisplay = startLineDisplay + truncation.outputLines - 1;
