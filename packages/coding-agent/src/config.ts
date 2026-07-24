@@ -70,17 +70,21 @@ function makeSelfUpdateCommandStep(command: string, args: string[]): SelfUpdateC
 	};
 }
 
-function isSourceCheckout(): boolean {
-	// Walk up from __dirname looking for a .git directory that indicates
-	// this is a source checkout (e.g. ~/pi-fork).
-	let dir = __dirname;
+function findSourceCheckoutRoot(): string | undefined {
+	// Use the executable entrypoint rather than this module's source location so
+	// tests and wrappers can model non-source installs from inside the repository.
+	let dir = dirname(process.env.PI_PACKAGE_DIR || process.argv[1] || process.execPath || __dirname);
 	for (let i = 0; i < 8; i++) {
-		if (existsSync(join(dir, ".git"))) return true;
+		if (existsSync(join(dir, ".git"))) return dir;
 		const parent = dirname(dir);
 		if (parent === dir) break;
 		dir = parent;
 	}
-	return false;
+	return undefined;
+}
+
+function isSourceCheckout(): boolean {
+	return findSourceCheckoutRoot() !== undefined;
 }
 
 export function detectInstallMethod(): InstallMethod {
@@ -198,20 +202,17 @@ function getSelfUpdateCommandForMethod(
 			return makeSelfUpdateCommand(installStep, uninstallStep);
 		}
 		case "source": {
-			// Source checkout -- find the repo root from the .git directory,
-			// then pull and rebuild. This handles DysektAI/pi fork installs
-			// where pi is built from source via setup.py.
-			let repoRoot = __dirname;
-			for (let i = 0; i < 8; i++) {
-				if (existsSync(join(repoRoot, ".git"))) break;
-				repoRoot = dirname(repoRoot);
-			}
-			const pull = makeSelfUpdateCommandStep("git", ["-C", repoRoot, "pull", "--ff-only"]);
+			const repoRoot = findSourceCheckoutRoot();
+			if (!repoRoot) return undefined;
+			const switchBranch = makeSelfUpdateCommandStep("git", ["-C", repoRoot, "switch", "local"]);
+			const fetch = makeSelfUpdateCommandStep("git", ["-C", repoRoot, "fetch", "origin", "local"]);
+			const update = makeSelfUpdateCommandStep("git", ["-C", repoRoot, "merge", "--ff-only", "origin/local"]);
+			const install = makeSelfUpdateCommandStep("npm", ["--prefix", repoRoot, "ci", "--ignore-scripts"]);
 			const build = makeSelfUpdateCommandStep("npm", ["--prefix", repoRoot, "run", "build"]);
 			return {
-				...pull,
-				display: `${pull.display} && ${build.display}`,
-				steps: [pull, build],
+				...fetch,
+				display: [switchBranch, fetch, update, install, build].map((step) => step.display).join(" && "),
+				steps: [switchBranch, fetch, update, install, build],
 			};
 		}
 		case "unknown":
@@ -524,7 +525,17 @@ export const PACKAGE_NAME: string = pkg.name || "@earendil-works/pi-coding-agent
 export const APP_NAME: string = piConfigName || "pi";
 export const APP_TITLE: string = piConfigName ? APP_NAME : "π";
 export const CONFIG_DIR_NAME: string = pkg.piConfig?.configDir || ".pi";
-export const VERSION: string = pkg.version || "0.0.0";
+const sourceVersionPath = findSourceCheckoutRoot();
+const sourceVersion = sourceVersionPath
+	? (() => {
+			try {
+				return readFileSync(join(sourceVersionPath, ".fork", "local-version"), "utf-8").trim() || undefined;
+			} catch {
+				return undefined;
+			}
+		})()
+	: undefined;
+export const VERSION: string = sourceVersion || pkg.version || "0.0.0";
 
 // e.g., PI_CODING_AGENT_DIR or TAU_CODING_AGENT_DIR
 export const ENV_AGENT_DIR = `${APP_NAME.toUpperCase()}_CODING_AGENT_DIR`;

@@ -37,17 +37,18 @@ export function stripGhostTokens(text: string): string {
 }
 
 /**
- * Removes unpaired Unicode surrogate characters from a string, and strips
- * zero-width / invisible ghost characters (see {@link stripGhostTokens}).
+ * Removes unpaired Unicode surrogate characters from a string.
  *
  * Unpaired surrogates (high surrogates 0xD800-0xDBFF without matching low surrogates 0xDC00-0xDFFF,
  * or vice versa) cause JSON serialization errors in many API providers.
  *
  * Valid emoji and other characters outside the Basic Multilingual Plane use properly paired
- * surrogates and will NOT be affected by this function.
+ * surrogates and will NOT be affected by this function. Invisible characters are also
+ * preserved; callers that explicitly want destructive filtering can use
+ * {@link stripGhostTokens}.
  *
  * @param text - The text to sanitize
- * @returns The sanitized text with unpaired surrogates and ghost characters removed
+ * @returns The sanitized text with unpaired surrogates removed
  *
  * @example
  * // Valid emoji (properly paired surrogates) are preserved
@@ -60,9 +61,5 @@ export function stripGhostTokens(text: string): string {
 export function sanitizeSurrogates(text: string): string {
 	// Replace unpaired high surrogates (0xD800-0xDBFF not followed by low surrogate)
 	// Replace unpaired low surrogates (0xDC00-0xDFFF not preceded by high surrogate)
-	const withoutSurrogates = text.replace(
-		/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g,
-		"",
-	);
-	return stripGhostTokens(withoutSurrogates);
+	return text.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, "");
 }

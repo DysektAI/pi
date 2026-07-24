@@ -65,6 +65,8 @@ GitHub releases include a versioned source archive covered by the release's `SHA
 
 ```bash
 VERSION="<release-version>"
+sha256sum --check --ignore-missing SHA256SUMS
+# Confirm the source archive is listed as OK before extracting it.
 tar -xzf "pi-${VERSION}-source.tar.gz"
 cd "pi-${VERSION}"
 ./scripts/build-binaries.sh --platform linux-x64 --out "$PWD/out"

@@ -16,7 +16,7 @@ done
 
 say() { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
 warn() { printf '\033[1;33m!! %s\033[0m\n' "$*"; }
-die() { printf '\033[1;31mxx %s\033[0m\n' "$*" >&2; exit 1; }
+die() { printf '\033[1;31mxx %b\033[0m\n' "$*" >&2; exit 1; }
 
 for PYTHON_BIN in python3 python py; do
 	command -v "$PYTHON_BIN" >/dev/null 2>&1 && "$PYTHON_BIN" -c 'import sys; raise SystemExit(sys.version_info[0] != 3)' >/dev/null 2>&1 && break
@@ -46,24 +46,31 @@ if [[ "$DO_DRIFT" -eq 1 && -f .fork/fork-drift-check.py ]]; then
 	"$PYTHON_BIN" .fork/fork-drift-check.py || warn "Review REDUNDANT/CHECK entries after this sync."
 fi
 
+already_current=0
 if git merge-base --is-ancestor main local; then
-	say "Already current with upstream/main"
-	if [[ "$DO_PUSH" -eq 1 ]]; then
-		git push origin local
-	fi
-	exit 0
+	already_current=1
+	say "Already current with upstream/main; validating the checkout"
 fi
 
 backup="backup/sync-$(date +%Y%m%d-%H%M%S)/local"
-git tag "$backup" local
-
 abort_merge() {
 	git merge --abort >/dev/null 2>&1 || true
 }
-trap abort_merge ERR INT TERM
+on_signal() {
+	local status="$1"
+	abort_merge
+	trap - INT TERM
+	exit "$status"
+}
 
-say "Merging upstream/main into local"
-if ! git merge --no-ff --no-commit main; then
+if [[ "$already_current" -eq 0 ]]; then
+	git tag "$backup" local
+	trap abort_merge ERR
+	trap 'on_signal 130' INT
+	trap 'on_signal 143' TERM
+
+	say "Merging upstream/main into local"
+	if ! git merge --no-ff --no-commit main; then
 	# Generated catalogs have no hand-written resolution: take upstream, then the
 	# build below regenerates them from the merged sources.
 	mapfile -t conflicted < <(git diff --name-only --diff-filter=U)
@@ -76,11 +83,12 @@ if ! git merge --no-ff --no-commit main; then
 		esac
 	done
 
-	remaining="$(git diff --name-only --diff-filter=U)"
-	if [[ -n "$remaining" ]]; then
-		printf '%s\n' "$remaining" >&2
-		abort_merge
-		die "Upstream overlaps fork code. Run 'git merge main', resolve the listed files on local, test, and commit. Backup: $backup"
+		remaining="$(git diff --name-only --diff-filter=U)"
+		if [[ -n "$remaining" ]]; then
+			printf '%s\n' "$remaining" >&2
+			abort_merge
+			die "Upstream overlaps fork code. Run 'git merge main', resolve the listed files on local, test, and commit. Backup: $backup"
+		fi
 	fi
 fi
 
@@ -97,7 +105,19 @@ if [[ "$DO_TEST" -eq 1 ]]; then
 	# already staged by the merge; an unstaged file here is an unexpected side effect.
 	git add 'packages/ai/src/*.generated.ts' 'packages/ai/src/providers/*.models.ts' 2>/dev/null || true
 	unexpected="$(git diff --name-only)"
-	[[ -z "$unexpected" ]] || die "Unexpected build changes:\n$unexpected"
+	if [[ -n "$unexpected" ]]; then
+		abort_merge
+		die "Unexpected build changes:\n$unexpected"
+	fi
+
+	say "Running repository checks"
+	node scripts/check-lockfile-commit.mjs
+	npm run check
+	unexpected="$(git diff --name-only)"
+	if [[ -n "$unexpected" ]]; then
+		abort_merge
+		die "Repository checks modified tracked files:\n$unexpected"
+	fi
 
 	say "Running focused fork checks"
 	(
@@ -110,7 +130,9 @@ if [[ "$DO_TEST" -eq 1 ]]; then
 	)
 fi
 
-git commit -m "merge: sync upstream/main into local"
+if [[ "$already_current" -eq 0 ]]; then
+	git commit -m "merge: sync upstream/main into local"
+fi
 trap - ERR INT TERM
 
 if [[ "$DO_PUSH" -eq 1 ]]; then
@@ -118,4 +140,8 @@ if [[ "$DO_PUSH" -eq 1 ]]; then
 fi
 
 say "Done"
-echo "local now contains upstream/main plus the fork patches. Backup: $backup"
+if [[ "$already_current" -eq 0 ]]; then
+	echo "local now contains upstream/main plus the fork patches. Backup: $backup"
+else
+	echo "local was already current and passed build/check validation."
+fi

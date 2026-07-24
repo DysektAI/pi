@@ -2,45 +2,59 @@ import type { AssistantMessage } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 function isAssistantMessage(message: unknown): message is AssistantMessage {
-	if (!message || typeof message !== "object") return false;
-	const role = (message as { role?: unknown }).role;
-	return role === "assistant";
+	return !!message && typeof message === "object" && (message as { role?: unknown }).role === "assistant";
 }
 
 export default function (pi: ExtensionAPI) {
 	let agentStartMs: number | null = null;
-	let firstDeltaMs: number | null = null;
-	let firstTextDeltaMs: number | null = null;
-	let lastAssistantDeltaMs: number | null = null;
+	let firstAssistantDeltaMs: number | null = null;
+	let messageFirstDeltaMs: number | null = null;
+	let messageLastDeltaMs: number | null = null;
+	let generationDurationMs = 0;
 
 	pi.on("agent_start", () => {
-		const now = Date.now();
-		agentStartMs = now;
-		firstDeltaMs = null;
-		firstTextDeltaMs = null;
-		lastAssistantDeltaMs = null;
+		agentStartMs = Date.now();
+		firstAssistantDeltaMs = null;
+		messageFirstDeltaMs = null;
+		messageLastDeltaMs = null;
+		generationDurationMs = 0;
+	});
+
+	pi.on("message_start", (event) => {
+		if (!isAssistantMessage(event.message)) return;
+		messageFirstDeltaMs = null;
+		messageLastDeltaMs = null;
 	});
 
 	pi.on("message_update", (event) => {
-		const update = (event as any).assistantMessageEvent;
-		if (!update || (update.type !== "thinking_delta" && update.type !== "text_delta")) return;
+		const update = event.assistantMessageEvent;
+		if (update.type !== "text_delta" && update.type !== "thinking_delta" && update.type !== "toolcall_delta") {
+			return;
+		}
 		const now = Date.now();
-		firstDeltaMs ??= now;
-		if (update.type === "text_delta") firstTextDeltaMs ??= now;
-		lastAssistantDeltaMs = now;
+		firstAssistantDeltaMs ??= now;
+		messageFirstDeltaMs ??= now;
+		messageLastDeltaMs = now;
+	});
+
+	pi.on("message_end", (event) => {
+		if (!isAssistantMessage(event.message)) return;
+		if (messageFirstDeltaMs !== null && messageLastDeltaMs !== null) {
+			generationDurationMs += Math.max(1, messageLastDeltaMs - messageFirstDeltaMs);
+		}
+		messageFirstDeltaMs = null;
+		messageLastDeltaMs = null;
 	});
 
 	pi.on("agent_end", (event, ctx) => {
-		if (!ctx.hasUI) return;
-		if (agentStartMs === null) return;
-
+		if (!ctx.hasUI || agentStartMs === null) return;
 		const endedAt = Date.now();
 		const startMs = agentStartMs;
-		const elapsedMs = endedAt - startMs;
-		const ttftMs = firstTextDeltaMs ?? firstDeltaMs;
-		const generationStartMs = firstDeltaMs ?? startMs;
-		const generationEndMs = lastAssistantDeltaMs ?? endedAt;
+		if (messageFirstDeltaMs !== null && messageLastDeltaMs !== null) {
+			generationDurationMs += Math.max(1, messageLastDeltaMs - messageFirstDeltaMs);
+		}
 		agentStartMs = null;
+		const elapsedMs = endedAt - startMs;
 		if (elapsedMs <= 0) return;
 
 		let input = 0;
@@ -48,7 +62,6 @@ export default function (pi: ExtensionAPI) {
 		let cacheRead = 0;
 		let cacheWrite = 0;
 		let totalTokens = 0;
-
 		for (const message of event.messages) {
 			if (!isAssistantMessage(message)) continue;
 			input += message.usage.input || 0;
@@ -57,15 +70,15 @@ export default function (pi: ExtensionAPI) {
 			cacheWrite += message.usage.cacheWrite || 0;
 			totalTokens += message.usage.totalTokens || 0;
 		}
-
 		if (output <= 0) return;
 
 		const elapsedSeconds = elapsedMs / 1000;
-		const generationSeconds = Math.max((generationEndMs - generationStartMs) / 1000, 0.001);
-		const tokensPerSecond = output / elapsedSeconds;
-		const generationTps = output / generationSeconds;
-		const ttft = ttftMs === null ? "TTFT n/a" : `TTFT ${(ttftMs - startMs).toLocaleString()}ms`;
-		const message = `${ttft}. gen TPS ${generationTps.toFixed(1)} tok/s; wall TPS ${tokensPerSecond.toFixed(1)}. out ${output.toLocaleString()}, in ${input.toLocaleString()}, cache r/w ${cacheRead.toLocaleString()}/${cacheWrite.toLocaleString()}, total ${totalTokens.toLocaleString()}, ${elapsedSeconds.toFixed(1)}s`;
+		const generationSeconds = Math.max(generationDurationMs / 1000, 0.001);
+		const ttft =
+			firstAssistantDeltaMs === null
+				? "TTFT n/a"
+				: `TTFT ${(firstAssistantDeltaMs - startMs).toLocaleString()}ms`;
+		const message = `${ttft}. gen TPS ${(output / generationSeconds).toFixed(1)} tok/s; wall TPS ${(output / elapsedSeconds).toFixed(1)}. out ${output.toLocaleString()}, in ${input.toLocaleString()}, cache r/w ${cacheRead.toLocaleString()}/${cacheWrite.toLocaleString()}, total ${totalTokens.toLocaleString()}, ${elapsedSeconds.toFixed(1)}s`;
 		ctx.ui.notify(message, "info");
 	});
 }

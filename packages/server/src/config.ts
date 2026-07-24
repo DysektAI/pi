@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 
 const CONFIG_DIR_NAME = ".pi";
 const ENV_SERVER_DIR = "PI_SERVER_DIR";
+const ENV_LEGACY_SERVER_DIR = "PI_ORCHESTRATOR_DIR";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -42,28 +43,35 @@ try {
 
 export const VERSION: string = pkg.version || "0.0.0";
 
-export function getServerDir(): string {
-	const envDir = process.env[ENV_SERVER_DIR];
-	if (envDir) {
-		return envDir;
-	}
+function getPiDir(): string {
+	return process.env.PI_CONFIG_DIR || join(homedir(), CONFIG_DIR_NAME);
+}
 
-	const piDir = process.env.PI_CONFIG_DIR || join(homedir(), CONFIG_DIR_NAME);
-	return join(piDir, "server");
+export function getServerDir(): string {
+	return process.env[ENV_SERVER_DIR] || process.env[ENV_LEGACY_SERVER_DIR] || join(getPiDir(), "server");
+}
+
+function getPersistedPath(name: string): string {
+	const currentPath = join(getServerDir(), name);
+	if (process.env[ENV_SERVER_DIR] || process.env[ENV_LEGACY_SERVER_DIR] || existsSync(currentPath)) {
+		return currentPath;
+	}
+	const legacyPath = join(getPiDir(), "orchestrator", name);
+	return existsSync(legacyPath) ? legacyPath : currentPath;
 }
 
 export function getAuthPath(): string {
-	return join(getServerDir(), "auth.json");
+	return getPersistedPath("auth.json");
 }
 
 export function getMachinePath(): string {
-	return join(getServerDir(), "machine.json");
+	return getPersistedPath("machine.json");
 }
 
 export function getInstancesPath(): string {
-	return join(getServerDir(), "instances.json");
+	return getPersistedPath("instances.json");
 }
 
 export function getSocketPath(): string {
-	return join(getServerDir(), "server.sock");
+	return getPersistedPath("server.sock");
 }

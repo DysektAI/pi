@@ -34,7 +34,10 @@ mkdir -p "$STATE_DIR"
 
 # Single-instance guard (flock if available; harmless no-op otherwise).
 if command -v flock >/dev/null 2>&1; then
-	exec 9>"$LOCK"
+	if ! exec 9>"$LOCK"; then
+		echo "$(date -Is) cannot open lock file $LOCK" >> "$LOG"
+		exit 1
+	fi
 	if ! flock -n 9; then
 		echo "$(date -Is) another fork-auto-sync is running; skipping." >> "$LOG"
 		exit 0
@@ -43,34 +46,46 @@ fi
 
 ts() { date -Is; }
 
+record_failure() {
+	local rc="$1"
+	local reason="$2"
+	{
+		echo "fork-auto-sync FAILED at $(ts) (exit $rc)"
+		echo "$reason"
+		echo "Resolve the failure on local, complete validation, and push:"
+		echo "  cd $REPO_ROOT && git switch local"
+		echo "Full log: $LOG"
+		echo "--- last 25 log lines ---"
+		tail -n 25 "$LOG"
+	} > "$MARKER"
+	echo "$(ts) fork-auto-sync FAILED (exit $rc); wrote $MARKER" >> "$LOG"
+	exit "$rc"
+}
+
 {
 	echo "==================================================================="
 	echo "$(ts) fork-auto-sync starting (repo: $REPO_ROOT)"
 } >> "$LOG"
 
-cd "$REPO_ROOT" || { echo "$(ts) cannot cd to $REPO_ROOT" >> "$LOG"; exit 1; }
+cd "$REPO_ROOT" || record_failure 1 "Cannot cd to $REPO_ROOT."
 
 # Run the checked-out local branch's sync script. PATH must include node/npm;
 # the systemd unit sets that. Capture fork-sync.sh's exit code, not tee's.
-git switch local >> "$LOG" 2>&1 || exit 1
+git switch local >> "$LOG" 2>&1 || record_failure 1 "Cannot switch to local."
 bash ./fork-sync.sh 2>&1 | tee -a "$LOG"
 rc="${PIPESTATUS[0]}"
 
-# Update installed pi packages (git/npm extensions) with the freshly built fork
-# CLI. Extensions live under ~/.pi/agent and are independent of the fork merge,
-# so run this regardless of the sync result and keep it non-fatal: a flaky
-# extension fetch must not mask a real sync conflict or trip the CONFLICT marker.
-# PI_SKIP_VERSION_CHECK matches the ~/.local/bin/pi launcher (a self-maintained
-# fork must never self-update into the npm package).
+# Update extensions only after a successful validated build. Never execute CLI
+# output from a rejected or partially completed merge.
 CLI_JS="$REPO_ROOT/packages/coding-agent/dist/cli.js"
-if [[ -f "$CLI_JS" ]]; then
+if [[ "$rc" -eq 0 && -f "$CLI_JS" ]]; then
 	echo "$(ts) updating pi extensions" >> "$LOG"
 	if PI_SKIP_VERSION_CHECK=1 node "$CLI_JS" update --extensions >> "$LOG" 2>&1; then
 		echo "$(ts) pi extensions up to date" >> "$LOG"
 	else
 		echo "$(ts) WARNING: pi extension update failed (non-fatal); see log above" >> "$LOG"
 	fi
-else
+elif [[ "$rc" -eq 0 ]]; then
 	echo "$(ts) WARNING: $CLI_JS missing; skipped extension update" >> "$LOG"
 fi
 
@@ -80,18 +95,4 @@ if [[ "$rc" -eq 0 ]]; then
 	exit 0
 fi
 
-# Non-zero: fork-sync.sh aborted on source overlap or validation failure.
-# Record a marker with the tail of the log so it is
-# obvious what needs a manual resolve.
-{
-	echo "fork-auto-sync FAILED at $(ts) (exit $rc)"
-	echo "Upstream overlaps fork code or validation failed."
-	echo "Resolve the listed files on local, complete the merge, test, and push:"
-	echo "  cd $REPO_ROOT && git switch local"
-	echo "Full log: $LOG"
-	echo "--- last 25 log lines ---"
-	tail -n 25 "$LOG"
-} > "$MARKER"
-
-echo "$(ts) fork-auto-sync FAILED (exit $rc); wrote $MARKER" >> "$LOG"
-exit "$rc"
+record_failure "$rc" "Upstream overlaps fork code or validation failed."

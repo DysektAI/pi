@@ -65,17 +65,22 @@ const vertexAuth: ApiKeyAuth = {
 
 		const adcPath =
 			credential?.env?.GOOGLE_APPLICATION_CREDENTIALS ?? (await ctx.env("GOOGLE_APPLICATION_CREDENTIALS"));
-		const hasCredentials = await ctx.fileExists(adcPath ?? VERTEX_ADC_PATH);
+		const hasCredentialsFile = await ctx.fileExists(adcPath ?? VERTEX_ADC_PATH);
 		const project =
 			credential?.env?.GOOGLE_CLOUD_PROJECT ??
 			(await ctx.env("GOOGLE_CLOUD_PROJECT")) ??
 			(await ctx.env("GCLOUD_PROJECT"));
 		const location = credential?.env?.GOOGLE_CLOUD_LOCATION ?? (await ctx.env("GOOGLE_CLOUD_LOCATION"));
-		if (hasCredentials && project && location) {
+		if (project && location) {
 			return {
 				auth: {},
 				env: credential?.env,
-				source: credential ? "stored credential" : "gcloud application default credentials",
+				source:
+					credential || hasCredentialsFile
+						? credential
+							? "stored credential"
+							: "gcloud application default credentials"
+						: "Google Cloud metadata credentials",
 			};
 		}
 		return undefined;

@@ -32,15 +32,13 @@ export function resolveMaxForks() {
 	const cpus = Math.max(1, availableCpus());
 	const raw = process.env.VITEST_MAX_FORKS;
 
-	if (raw !== undefined && raw.trim() !== "") {
-		const parsed = Number.parseInt(raw, 10);
-		if (Number.isFinite(parsed)) {
-			// VITEST_MAX_FORKS=0 means "use every core" (CI opt-out of the cap).
-			if (parsed <= 0) {
-				return cpus;
-			}
-			return Math.min(parsed, cpus);
+	if (raw !== undefined && /^(0|[1-9]\d*)$/.test(raw.trim())) {
+		const parsed = Number(raw.trim());
+		// VITEST_MAX_FORKS=0 means "use every core" (CI opt-out of the cap).
+		if (parsed === 0) {
+			return cpus;
 		}
+		return Math.min(parsed, cpus);
 	}
 
 	return Math.min(DEFAULT_MAX_FORKS, cpus);

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	checkForNewPiVersion,
 	comparePackageVersions,
@@ -9,6 +9,11 @@ import {
 
 const originalSkipVersionCheck = process.env.PI_SKIP_VERSION_CHECK;
 const originalOffline = process.env.PI_OFFLINE;
+const originalPackageDir = process.env.PI_PACKAGE_DIR;
+
+beforeEach(() => {
+	process.env.PI_PACKAGE_DIR = "/opt/pi-installed";
+});
 
 afterEach(() => {
 	vi.unstubAllGlobals();
@@ -21,6 +26,11 @@ afterEach(() => {
 		delete process.env.PI_OFFLINE;
 	} else {
 		process.env.PI_OFFLINE = originalOffline;
+	}
+	if (originalPackageDir === undefined) {
+		delete process.env.PI_PACKAGE_DIR;
+	} else {
+		process.env.PI_PACKAGE_DIR = originalPackageDir;
 	}
 });
 
@@ -78,6 +88,37 @@ describe("version checks", () => {
 		vi.stubGlobal("fetch", fetchMock);
 
 		await expect(getLatestPiRelease("1.2.3")).resolves.toEqual({ note: "**Read this**", version: "1.2.4" });
+	});
+
+	it("uses source releases and retains their GitHub URL", async () => {
+		process.env.PI_PACKAGE_DIR = process.cwd();
+		const fetchMock = vi.fn(async () =>
+			Response.json({
+				tag_name: "1.2.3.local.9",
+				body: "source build",
+				html_url: "https://github.com/DysektAI/pi/releases/tag/1.2.3.local.9",
+			}),
+		);
+		vi.stubGlobal("fetch", fetchMock);
+
+		await expect(getLatestPiRelease("1.2.3.local.8")).resolves.toEqual({
+			version: "1.2.3.local.9",
+			note: "source build",
+			url: "https://github.com/DysektAI/pi/releases/tag/1.2.3.local.9",
+		});
+		expect(fetchMock).toHaveBeenCalledOnce();
+	});
+
+	it("falls back to upstream when the source release request fails", async () => {
+		process.env.PI_PACKAGE_DIR = process.cwd();
+		const fetchMock = vi
+			.fn()
+			.mockRejectedValueOnce(new Error("GitHub unavailable"))
+			.mockResolvedValueOnce(Response.json({ version: "1.2.4" }));
+		vi.stubGlobal("fetch", fetchMock);
+
+		await expect(getLatestPiRelease("1.2.3")).resolves.toEqual({ version: "1.2.4" });
+		expect(fetchMock).toHaveBeenCalledTimes(2);
 	});
 
 	it("skips automatic api calls when version checks are disabled", async () => {

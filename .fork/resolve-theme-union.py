@@ -43,6 +43,9 @@ def collect_union_lines(block_lines):
             continue
         if ln.strip() == "":
             continue
+        if ln.strip() == ";":
+            has_semi = True
+            continue
         member = ln.rstrip()
         ends_semi = member.endswith(";")
         if ends_semi:
@@ -83,9 +86,9 @@ def resolve(text):
                 continue
             region.append(lines[j])
             j += 1
-        # region spans lines[i:j]; verify every non-marker line is union-ish.
+        # region spans lines[i:j]; verify it closed and every non-marker line is union-ish.
         body = [ln for ln in region if not MARKER.match(ln)]
-        if not body or not all(is_union_ish(ln) for ln in body):
+        if depth != 0 or not body or not all(is_union_ish(ln) for ln in body):
             # Not a pure union conflict; leave it for manual resolution.
             out.extend(region)
             i = j

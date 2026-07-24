@@ -196,6 +196,24 @@ describe("SQLite migrations", () => {
 		}
 	});
 
+	it("applies compaction boundaries to incrementally materialized branches", async () => {
+		const root = createTempDir();
+		const databasePath = join(root, "sessions.sqlite");
+		const env = new NodeExecutionEnv({ cwd: root });
+		const repo = new SqliteSessionRepo({ env, sqlite: createNodeSqliteFactory(), databasePath });
+		const session = await repo.create({ cwd: root, id: "session-1" });
+		await session.appendMessage(createUserMessage("discarded"));
+		await session.appendMessage(createAssistantMessage("also discarded"));
+		const keptId = await session.appendMessage(createUserMessage("kept"));
+		await session.appendCompaction("summary", keptId, 1000);
+		await session.appendMessage(createAssistantMessage("after compaction"));
+
+		const reopened = await repo.open(await session.getMetadata());
+		const context = await reopened.buildContext();
+		expect(context.messages.map((message) => message.role)).toEqual(["compactionSummary", "user", "assistant"]);
+		expect(context.messages).not.toContainEqual(expect.objectContaining({ content: "discarded" }));
+	});
+
 	it("reopens using branch materialization and session summary state", async () => {
 		const root = createTempDir();
 		const databasePath = join(root, "sessions.sqlite");

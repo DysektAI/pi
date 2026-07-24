@@ -106,7 +106,7 @@ export async function retryProviderRequest<T>(
 	request: () => Promise<T>,
 	options: ProviderRetryOptions = {},
 ): Promise<T> {
-	const maxRetries = options.maxRetries ?? 0;
+	const maxRetries = options.maxRetries ?? 2;
 	let retriesRemaining = maxRetries;
 
 	for (;;) {

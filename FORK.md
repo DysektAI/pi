@@ -86,8 +86,8 @@ manual resolution:
 
 ```bash
 git merge --abort
-# or, after a completed bad merge:
-git reset --hard backup/sync-<timestamp>/local
+# or, after a completed bad merge (preserves later history):
+git revert -m 1 <bad-merge-commit>
 ```
 
 Check current divergence with:

@@ -679,6 +679,9 @@ export async function generateSummaryWithUsage(
 	if (response.stopReason === "error") {
 		throw new Error(`Summarization failed: ${response.errorMessage || "Unknown error"}`);
 	}
+	if (response.stopReason === "aborted") {
+		throw new DOMException("Summarization aborted", "AbortError");
+	}
 
 	const textContent = contentText(response.content);
 
@@ -960,6 +963,9 @@ async function generateTurnPrefixSummary(
 
 	if (response.stopReason === "error") {
 		throw new Error(`Turn prefix summarization failed: ${response.errorMessage || "Unknown error"}`);
+	}
+	if (response.stopReason === "aborted") {
+		throw new DOMException("Turn prefix summarization aborted", "AbortError");
 	}
 
 	return {

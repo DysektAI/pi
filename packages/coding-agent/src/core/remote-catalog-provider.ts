@@ -78,7 +78,8 @@ export function withRemoteCatalog(
 					if (context.signal?.aborted) return;
 					const checkedAt = Date.now();
 					if (response.status === 404 || response.status === 501) {
-						await context.store.write({ ...(stored ?? { models: [] }), checkedAt, lastModified: 0 });
+						dynamicModels = [];
+						await context.store.write({ models: [], checkedAt, lastModified: 0 });
 						return;
 					}
 					if (!response.ok) {

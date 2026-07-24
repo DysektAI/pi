@@ -40,10 +40,11 @@ export async function applyMigrations(db: SqliteDatabase): Promise<void> {
 	for (const migration of migrations) {
 		if (applied.has(migration.id)) continue;
 		await db.transaction(async () => {
-			await db.exec(migration.sql);
-			await db
-				.prepare("INSERT INTO migrations (id, applied_at) VALUES (?, ?)")
+			const claim = await db
+				.prepare("INSERT OR IGNORE INTO migrations (id, applied_at) VALUES (?, ?)")
 				.run(migration.id, new Date().toISOString());
+			if (claim.changes === 0) return;
+			await db.exec(migration.sql);
 		});
 		applied.add(migration.id);
 	}

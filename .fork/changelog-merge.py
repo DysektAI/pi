@@ -86,11 +86,15 @@ def parse_subsections(lines, start, end):
     return sections, order
 
 
-def fallback_to_ours(ours_lines, out_path):
-    """When we cannot reason about structure, keep ours unchanged and succeed
-    only if there is genuinely nothing to merge; otherwise signal conflict."""
+def outside_unreleased(lines, bounds):
+    """Return content outside [Unreleased] for non-additive change detection."""
+    start, end = bounds
+    return lines[:start] + lines[end:]
+
+
+def write_result(lines, out_path):
     with open(out_path, "w", encoding="utf-8") as f:
-        f.write("\n".join(ours_lines) + "\n")
+        f.write("\n".join(lines) + "\n")
 
 
 def main():
@@ -118,23 +122,29 @@ def main():
     if bb is not None:
         base_sections, _ = parse_subsections(base, *bb)
 
-    theirs_sections, theirs_order = parse_subsections(theirs, *tb)
+    ours_sections, ours_order = parse_subsections(ours, *ob)
 
-    # Fork-added bullets: present in theirs[Unreleased] subsection, absent from
-    # the same subsection of base[Unreleased].
+    # During `git merge main` ours is the fork and theirs is upstream. Only
+    # auto-resolve when the fork side changed the base additively: upstream may
+    # release/move entries freely, while local removals or edits need review.
+    if bb is not None and outside_unreleased(ours, ob) != outside_unreleased(base, bb):
+        sys.stderr.write("changelog-merge: fork changed content outside [Unreleased]; deferring to manual merge\n")
+        return 1
+
     added = {}
-    for sec in theirs_order:
+    for sec in ours_order:
         base_bullets = set(base_sections.get(sec, []))
-        new_bullets = [b for b in theirs_sections[sec] if b not in base_bullets]
+        new_bullets = [bullet for bullet in ours_sections[sec] if bullet not in base_bullets]
         if new_bullets:
             added[sec] = new_bullets
+    for sec, base_bullets in base_sections.items():
+        if not set(base_bullets).issubset(set(ours_sections.get(sec, []))):
+            sys.stderr.write("changelog-merge: fork removed or moved base bullets; deferring to manual merge\n")
+            return 1
 
-    if not added:
-        # Nothing fork-specific to carry; take ours verbatim.
-        fallback_to_ours(ours, out_p)
-        return 0
-
-    out = list(ours)
+    # Build from upstream, then carry only verified fork additions. This keeps
+    # release headings, moved bullets, and removals made upstream.
+    out = list(theirs)
 
     for sec, bullets in added.items():
         # Skip bullets already present anywhere in ours' [Unreleased].
@@ -183,8 +193,7 @@ def main():
             j += 1
         out[last_bullet + 1:last_bullet + 1] = to_add
 
-    with open(out_p, "w", encoding="utf-8") as f:
-        f.write("\n".join(out) + "\n")
+    write_result(out, out_p)
     return 0
 
 
