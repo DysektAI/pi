@@ -63,6 +63,7 @@
 	},
 	"version": "0.0.3",
 	"overrides": {
+		"protobufjs": "7.6.5",
 		"rimraf": "6.1.2",
 		"shell-quote": "1.10.0",
 		"protobufjs": "7.6.5",

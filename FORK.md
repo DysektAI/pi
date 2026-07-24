@@ -96,3 +96,29 @@ Check current divergence with:
 git log --oneline local..upstream/main   # upstream commits not yet merged
 git log --oneline upstream/main..local   # fork-only commits
 ```
+
+## Local version tracking
+
+`.fork/local-version` records a human-readable fork iteration marker:
+
+```
+0.82.0+local.1
+```
+
+Format: `<upstream-version>+local.<N>` where N is a monotonically
+increasing counter reset to 1 after each upstream version bump.
+
+The `+` before `local` is **required** — semver build metadata must be
+separated by `+`. Never put the local suffix into any `package.json`
+`"version"` field; those stay on the clean upstream version so `npm ci`
+and other tooling parse them correctly.
+
+To bump after local changes:
+```bash
+echo "$(sed 's/+local\.[0-9]*$//' .fork/local-version)+local.$(( $(sed 's/.*+local\.//' .fork/local-version) + 1 ))" > .fork/local-version
+```
+
+After a successful upstream sync that changes the base version, reset to 1:
+```bash
+echo "0.82.0+local.1" > .fork/local-version
+```
