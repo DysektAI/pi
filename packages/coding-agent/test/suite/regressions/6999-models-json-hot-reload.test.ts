@@ -60,7 +60,7 @@ describe("issue #6999 models.json hot reload", () => {
 
 		await vi.waitFor(() => {
 			const rendered = stripAnsi(selector.render(120).join("\n"));
-			expect(rendered).toContain("new-model [new-provider]");
+			expect(rendered).toContain("[new-provider] new-model");
 			expect(rendered).toContain("Model catalogs refreshed.");
 		});
 		expect(harness.session.modelRuntime.getModel("old-provider", "old-model")).toBeUndefined();
