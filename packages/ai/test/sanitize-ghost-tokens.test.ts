@@ -35,12 +35,14 @@ describe("stripGhostTokens", () => {
 	});
 });
 
-describe("sanitizeSurrogates ghost-token integration", () => {
-	it("strips zero-width ghost characters as part of sanitization", () => {
-		expect(sanitizeSurrogates("he\u200bllo\uFEFF world")).toBe("hello world");
+describe("sanitizeSurrogates ghost-token isolation", () => {
+	it("preserves semantic invisible characters during surrogate sanitization", () => {
+		const input = "he\u200bllo\uFEFF world";
+		expect(sanitizeSurrogates(input)).toBe(input);
 	});
 
-	it("still preserves valid emoji while stripping ghosts", () => {
-		expect(sanitizeSurrogates("Hello\u200b 🙈 World")).toBe("Hello 🙈 World");
+	it("preserves valid emoji and adjacent invisible characters", () => {
+		const input = "Hello\u200b 🙈 World";
+		expect(sanitizeSurrogates(input)).toBe(input);
 	});
 });

@@ -71,11 +71,15 @@ function getHttpStatus(error: unknown): number | undefined {
 }
 
 function formatErrorMessage(error: unknown, provider: string): string {
+	const normalized = normalizeProviderError(error);
 	const status = getHttpStatus(error);
 	if (status === 401 || status === 403) {
-		return `Authentication failed (HTTP ${status}) for provider "${provider}". The API key was rejected; check that it is valid and not expired.`;
+		const authMessage = `Authentication failed (HTTP ${status}) for provider "${provider}". The API key was rejected; check that it is valid and not expired.`;
+		const detail = formatProviderError(normalized);
+		const hasUsefulDetail = detail && detail !== String(status) && !/^\d+ status code \(no body\)$/i.test(detail);
+		return hasUsefulDetail ? `${authMessage} Provider response: ${detail}` : authMessage;
 	}
-	return formatProviderError(normalizeProviderError(error));
+	return formatProviderError(normalized);
 }
 
 function hasToolHistory(messages: Message[]): boolean {

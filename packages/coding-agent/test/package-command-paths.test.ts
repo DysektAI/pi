@@ -473,7 +473,7 @@ describe("package commands", () => {
 	it("allows explicit self-update checks when automatic version checks are disabled", async () => {
 		const previousSkipVersionCheck = process.env.PI_SKIP_VERSION_CHECK;
 		process.env.PI_SKIP_VERSION_CHECK = "1";
-		const fetchMock = vi.fn(async () => Response.json({ version: VERSION }));
+		const fetchMock = vi.fn(async () => Response.json({ tag_name: VERSION }));
 		vi.stubGlobal("fetch", fetchMock);
 		const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 		const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
