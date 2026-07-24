@@ -29,6 +29,26 @@ export function getFileSystemResultOrThrow<TValue>(result: Result<TValue, FileEr
 	return result.value;
 }
 
+export interface CompactionTraversalState {
+	stop: boolean;
+	stopAtEntryId: string | null;
+}
+
+/** Apply the shared compaction-boundary rules while walking a path from leaf to root. */
+export function advanceCompactionTraversal(
+	entry: SessionTreeEntry,
+	stopAtEntryId: string | null,
+): CompactionTraversalState {
+	if (stopAtEntryId !== null && entry.id === stopAtEntryId) {
+		return { stop: true, stopAtEntryId };
+	}
+	if (entry.type === "compaction") {
+		if (entry.retainedTail) return { stop: true, stopAtEntryId };
+		return { stop: false, stopAtEntryId: entry.firstKeptEntryId ?? null };
+	}
+	return { stop: false, stopAtEntryId };
+}
+
 export async function getEntriesToFork(
 	storage: SessionStorage,
 	options: { entryId?: string; position?: "before" | "at" },

@@ -109,7 +109,7 @@ export function getRadiusUrl(): string {
 }
 
 export function getRadiusServerBaseUrl(): string {
-	const explicitUrl = process.env.PI_RADIUS_SERVER_URL ?? process.env.PI_RADIUS_ORCHESTRATOR_URL;
+	const explicitUrl = process.env.PI_RADIUS_SERVER_URL || process.env.PI_RADIUS_ORCHESTRATOR_URL;
 	if (explicitUrl) {
 		return explicitUrl;
 	}

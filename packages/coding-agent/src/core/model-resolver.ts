@@ -295,9 +295,23 @@ export async function resolveModelScopeWithDiagnostics(
 
 			if (colonIdx !== -1) {
 				const suffix = pattern.substring(colonIdx + 1);
+				const prefix = pattern.substring(0, colonIdx);
 				if (isValidThinkingLevel(suffix)) {
 					thinkingLevel = suffix;
-					globPattern = pattern.substring(0, colonIdx);
+					globPattern = prefix;
+				} else {
+					const exactPrefixMatch = findExactModelReferenceMatch(prefix, availableModels);
+					if (exactPrefixMatch) {
+						if (!scopedModels.find((sm) => modelsAreEqual(sm.model, exactPrefixMatch))) {
+							scopedModels.push({ model: exactPrefixMatch });
+						}
+						diagnostics.push({
+							type: "warning",
+							message: `Invalid thinking level "${suffix}" in pattern "${pattern}". Using default instead.`,
+							pattern,
+						});
+						continue;
+					}
 				}
 			}
 

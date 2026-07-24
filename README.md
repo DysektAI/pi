@@ -12,6 +12,8 @@
 
 # Pi Agent Harness
 
+> **DysektAI fork:** `main` mirrors `upstream/main`; `local` contains and releases the runnable fork. A verified source checkout checks only `DysektAI/pi` releases, and `pi update --self` fast-forwards `origin/local` and rebuilds it. It never updates from the upstream package channel. Maintainers use `fork-sync.sh` separately to merge upstream into `local`. See [FORK.md](FORK.md).
+
 This is the home of the Pi agent harness project including our self extensible coding agent.
 
 * **[@earendil-works/pi-coding-agent](packages/coding-agent)**: Interactive coding agent CLI
@@ -65,9 +67,8 @@ GitHub releases include a versioned source archive covered by the release's `SHA
 
 ```bash
 VERSION="<release-version>"
-sha256sum --check --ignore-missing SHA256SUMS
-# Confirm the source archive is listed as OK before extracting it.
-tar -xzf "pi-${VERSION}-source.tar.gz"
+sha256sum --check --ignore-missing SHA256SUMS && \
+  tar -xzf "pi-${VERSION}-source.tar.gz"
 cd "pi-${VERSION}"
 ./scripts/build-binaries.sh --offline-model-data --platform linux-x64 --out "$PWD/out"
 ```

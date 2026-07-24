@@ -70,12 +70,24 @@ function makeSelfUpdateCommandStep(command: string, args: string[]): SelfUpdateC
 	};
 }
 
+function isPiSourceCheckoutRoot(dir: string): boolean {
+	if (!existsSync(join(dir, ".git")) || !existsSync(join(dir, ".fork", "local-version"))) return false;
+	try {
+		const packageJson = JSON.parse(readFileSync(join(dir, "packages", "coding-agent", "package.json"), "utf-8")) as {
+			name?: unknown;
+		};
+		return packageJson.name === "@earendil-works/pi-coding-agent";
+	} catch {
+		return false;
+	}
+}
+
 function findSourceCheckoutRoot(): string | undefined {
 	// Use the executable entrypoint rather than this module's source location so
 	// tests and wrappers can model non-source installs from inside the repository.
 	let dir = dirname(process.env.PI_PACKAGE_DIR || process.argv[1] || process.execPath || __dirname);
 	for (let i = 0; i < 8; i++) {
-		if (existsSync(join(dir, ".git"))) return dir;
+		if (isPiSourceCheckoutRoot(dir)) return dir;
 		const parent = dirname(dir);
 		if (parent === dir) break;
 		dir = parent;
@@ -204,15 +216,23 @@ function getSelfUpdateCommandForMethod(
 		case "source": {
 			const repoRoot = findSourceCheckoutRoot();
 			if (!repoRoot) return undefined;
+			const fetch = makeSelfUpdateCommandStep("git", [
+				"-C",
+				repoRoot,
+				"fetch",
+				"origin",
+				"local:refs/remotes/origin/local",
+			]);
+			// `git switch local` creates a tracking branch when only origin/local exists,
+			// while continuing to work for normal clones that already have local.
 			const switchBranch = makeSelfUpdateCommandStep("git", ["-C", repoRoot, "switch", "local"]);
-			const fetch = makeSelfUpdateCommandStep("git", ["-C", repoRoot, "fetch", "origin", "local"]);
 			const update = makeSelfUpdateCommandStep("git", ["-C", repoRoot, "merge", "--ff-only", "origin/local"]);
 			const install = makeSelfUpdateCommandStep("npm", ["--prefix", repoRoot, "ci", "--ignore-scripts"]);
 			const build = makeSelfUpdateCommandStep("npm", ["--prefix", repoRoot, "run", "build"]);
 			return {
 				...fetch,
-				display: [switchBranch, fetch, update, install, build].map((step) => step.display).join(" && "),
-				steps: [switchBranch, fetch, update, install, build],
+				display: [fetch, switchBranch, update, install, build].map((step) => step.display).join(" && "),
+				steps: [fetch, switchBranch, update, install, build],
 			};
 		}
 		case "unknown":

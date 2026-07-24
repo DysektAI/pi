@@ -13,7 +13,30 @@ export interface LatestPiRelease {
 	url?: string;
 }
 
+interface LocalSourceVersion {
+	base: string;
+	iteration: number;
+}
+
+function parseLocalSourceVersion(version: string): LocalSourceVersion | undefined {
+	const match = /^(v?\d+\.\d+\.\d+)(?:\+local\.|\.local\.)(0|[1-9]\d*)$/.exec(version.trim());
+	if (!match) return undefined;
+	const base = valid(stripLeadingV(match[1]));
+	return base ? { base, iteration: Number(match[2]) } : undefined;
+}
+
 export function comparePackageVersions(leftVersion: string, rightVersion: string): number | undefined {
+	const leftLocal = parseLocalSourceVersion(leftVersion);
+	const rightLocal = parseLocalSourceVersion(rightVersion);
+	if (leftLocal || rightLocal) {
+		const leftBase = leftLocal?.base ?? valid(stripLeadingV(leftVersion.trim()));
+		const rightBase = rightLocal?.base ?? valid(stripLeadingV(rightVersion.trim()));
+		if (!leftBase || !rightBase) return undefined;
+		const baseComparison = compare(leftBase, rightBase);
+		if (baseComparison !== 0) return baseComparison;
+		return (leftLocal?.iteration ?? 0) - (rightLocal?.iteration ?? 0);
+	}
+
 	const left = valid(leftVersion.trim());
 	const right = valid(rightVersion.trim());
 	if (!left || !right) return undefined;
@@ -22,7 +45,7 @@ export function comparePackageVersions(leftVersion: string, rightVersion: string
 
 export function isNewerPackageVersion(candidateVersion: string, currentVersion: string): boolean {
 	const comparison = comparePackageVersions(candidateVersion, currentVersion);
-	return comparison === undefined ? candidateVersion.trim() !== currentVersion.trim() : comparison > 0;
+	return comparison !== undefined && comparison > 0;
 }
 
 function stripLeadingV(version: string): string {
@@ -103,17 +126,14 @@ export async function getLatestPiRelease(
 		return fetchLatestFromGitHub(process.env.PI_UPDATE_API_URL, currentVersion, remainingTimeout(deadline));
 	}
 
-	// Fork releases are source-only. Package-manager installs must continue to
-	// use the published upstream package rather than an unpublishable fork tag.
+	// A verified fork source checkout follows only releases built from origin/local.
+	// Never fall through to the upstream package feed: it is a different release
+	// channel and source self-update cannot install that package over this checkout.
 	if (detectInstallMethod() === "source") {
-		try {
-			const forkRelease = await fetchLatestFromGitHub(FORK_RELEASES_URL, currentVersion, remainingTimeout(deadline));
-			if (forkRelease) return forkRelease;
-		} catch {
-			// Preserve upstream checks when GitHub is unavailable or malformed.
-		}
+		return fetchLatestFromGitHub(FORK_RELEASES_URL, currentVersion, remainingTimeout(deadline));
 	}
 
+	// Package-manager installs remain on the published upstream package channel.
 	return fetchLatestFromUpstream(currentVersion, remainingTimeout(deadline));
 }
 

@@ -2201,19 +2201,32 @@ export class AgentSession {
 			// Continue once so queued messages are delivered.
 			return this.agent.hasQueuedMessages();
 		} catch (error) {
+			const aborted =
+				this._autoCompactionAbortController?.signal.aborted === true ||
+				(error instanceof Error && error.name === "AbortError");
 			const errorMessage = error instanceof Error ? error.message : "compaction failed";
 			if (started) {
-				this._emit({
-					type: "compaction_end",
-					reason,
-					result: undefined,
-					aborted: false,
-					willRetry: false,
-					errorMessage:
-						reason === "overflow"
-							? `Context overflow recovery failed: ${errorMessage}`
-							: `Auto-compaction failed: ${errorMessage}`,
-				});
+				this._emit(
+					aborted
+						? {
+								type: "compaction_end",
+								reason,
+								result: undefined,
+								aborted: true,
+								willRetry: false,
+							}
+						: {
+								type: "compaction_end",
+								reason,
+								result: undefined,
+								aborted: false,
+								willRetry: false,
+								errorMessage:
+									reason === "overflow"
+										? `Context overflow recovery failed: ${errorMessage}`
+										: `Auto-compaction failed: ${errorMessage}`,
+							},
+				);
 			}
 			return false;
 		} finally {

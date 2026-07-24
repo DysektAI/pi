@@ -21,43 +21,64 @@ jobs:
   release:
     if: github.event.head_commit.message == null || !contains(github.event.head_commit.message, '[skip ci]')
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event_name == 'push' && github.sha || 'local' }}
           fetch-depth: 0
 
-      - name: Create source release commit
+      - name: Create or reuse source release commit
         id: version
         run: |
           CURRENT_VERSION=$(node -p "require('./packages/coding-agent/package.json').version")
-          BASE_VERSION="${CURRENT_VERSION%%.local.*}"
-          FULL_VERSION="${BASE_VERSION}.local.${GITHUB_RUN_NUMBER}"
+          BASE_VERSION="${CURRENT_VERSION%%+local.*}"
+          BASE_VERSION="${BASE_VERSION%%.local.*}"
+          FULL_VERSION="${BASE_VERSION}+local.${GITHUB_RUN_NUMBER}"
           TAG="${FULL_VERSION}"
 
-          printf '%s\n' "$FULL_VERSION" > .fork/local-version
           git config user.name 'github-actions[bot]'
           git config user.email 'github-actions[bot]@users.noreply.github.com'
-          git add .fork/local-version
-          git commit -m "chore: mark source build ${FULL_VERSION} [skip ci]"
-          git tag "$TAG"
+          git fetch origin "+refs/tags/${TAG}:refs/tags/${TAG}" 2>/dev/null || true
+
+          if git show-ref --verify --quiet "refs/tags/${TAG}"; then
+            MARKER=$(git show "${TAG}:.fork/local-version")
+            if [ "$MARKER" != "$FULL_VERSION" ]; then
+              echo "Existing tag ${TAG} has unexpected local-version marker: ${MARKER}" >&2
+              exit 1
+            fi
+            echo "Reusing existing source release tag ${TAG}"
+            echo "created=false" >> "$GITHUB_OUTPUT"
+          else
+            printf '%s\n' "$FULL_VERSION" > .fork/local-version
+            git add .fork/local-version
+            git commit -m "chore: mark source build ${FULL_VERSION} [skip ci]"
+            git tag "$TAG"
+            echo "created=true" >> "$GITHUB_OUTPUT"
+          fi
 
           echo "base=$BASE_VERSION" >> "$GITHUB_OUTPUT"
           echo "full=$FULL_VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
       - name: Push release commit and tag
+        if: steps.version.outputs.created == 'true'
         env:
           TAG: ${{ steps.version.outputs.tag }}
         run: git push --atomic origin HEAD:local "refs/tags/${TAG}"
 
-      - name: Create GitHub release
+      - name: Create or reuse GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.version.outputs.tag }}
           VERSION: ${{ steps.version.outputs.base }}
           FULL_VERSION: ${{ steps.version.outputs.full }}
         run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "GitHub release ${TAG} already exists"
+            exit 0
+          fi
+
           LAST_TAG=$(git tag --sort=-version:refname | grep -v "^${TAG}$" | grep -v '^v' | head -1)
           if [ -n "$LAST_TAG" ]; then
             RANGE="${LAST_TAG}..${TAG}"

@@ -11,6 +11,8 @@ export default function (pi: ExtensionAPI) {
 	let messageFirstDeltaMs: number | null = null;
 	let messageLastDeltaMs: number | null = null;
 	let generationDurationMs = 0;
+	let assistantMessagesObserved = 0;
+	let assistantIntervalsMeasured = 0;
 
 	pi.on("agent_start", () => {
 		agentStartMs = Date.now();
@@ -18,10 +20,13 @@ export default function (pi: ExtensionAPI) {
 		messageFirstDeltaMs = null;
 		messageLastDeltaMs = null;
 		generationDurationMs = 0;
+		assistantMessagesObserved = 0;
+		assistantIntervalsMeasured = 0;
 	});
 
 	pi.on("message_start", (event) => {
 		if (!isAssistantMessage(event.message)) return;
+		assistantMessagesObserved++;
 		messageFirstDeltaMs = null;
 		messageLastDeltaMs = null;
 	});
@@ -37,22 +42,29 @@ export default function (pi: ExtensionAPI) {
 		messageLastDeltaMs = now;
 	});
 
-	pi.on("message_end", (event) => {
-		if (!isAssistantMessage(event.message)) return;
-		if (messageFirstDeltaMs !== null && messageLastDeltaMs !== null) {
-			generationDurationMs += Math.max(1, messageLastDeltaMs - messageFirstDeltaMs);
+	const finishAssistantInterval = (): void => {
+		if (
+			messageFirstDeltaMs !== null &&
+			messageLastDeltaMs !== null &&
+			messageLastDeltaMs > messageFirstDeltaMs
+		) {
+			generationDurationMs += messageLastDeltaMs - messageFirstDeltaMs;
+			assistantIntervalsMeasured++;
 		}
 		messageFirstDeltaMs = null;
 		messageLastDeltaMs = null;
+	};
+
+	pi.on("message_end", (event) => {
+		if (!isAssistantMessage(event.message)) return;
+		finishAssistantInterval();
 	});
 
 	pi.on("agent_end", (event, ctx) => {
 		if (!ctx.hasUI || agentStartMs === null) return;
 		const endedAt = Date.now();
 		const startMs = agentStartMs;
-		if (messageFirstDeltaMs !== null && messageLastDeltaMs !== null) {
-			generationDurationMs += Math.max(1, messageLastDeltaMs - messageFirstDeltaMs);
-		}
+		finishAssistantInterval();
 		agentStartMs = null;
 		const elapsedMs = endedAt - startMs;
 		if (elapsedMs <= 0) return;
@@ -73,12 +85,15 @@ export default function (pi: ExtensionAPI) {
 		if (output <= 0) return;
 
 		const elapsedSeconds = elapsedMs / 1000;
-		const generationSeconds = Math.max(generationDurationMs / 1000, 0.001);
 		const ttft =
 			firstAssistantDeltaMs === null
 				? "TTFT n/a"
 				: `TTFT ${(firstAssistantDeltaMs - startMs).toLocaleString()}ms`;
-		const message = `${ttft}. gen TPS ${(output / generationSeconds).toFixed(1)} tok/s; wall TPS ${(output / elapsedSeconds).toFixed(1)}. out ${output.toLocaleString()}, in ${input.toLocaleString()}, cache r/w ${cacheRead.toLocaleString()}/${cacheWrite.toLocaleString()}, total ${totalTokens.toLocaleString()}, ${elapsedSeconds.toFixed(1)}s`;
+		const generationTps =
+			generationDurationMs > 0 && assistantIntervalsMeasured === assistantMessagesObserved
+				? `gen TPS ${(output / (generationDurationMs / 1000)).toFixed(1)} tok/s`
+				: "gen TPS n/a";
+		const message = `${ttft}. ${generationTps}; wall TPS ${(output / elapsedSeconds).toFixed(1)}. out ${output.toLocaleString()}, in ${input.toLocaleString()}, cache r/w ${cacheRead.toLocaleString()}/${cacheWrite.toLocaleString()}, total ${totalTokens.toLocaleString()}, ${elapsedSeconds.toFixed(1)}s`;
 		ctx.ui.notify(message, "info");
 	});
 }

@@ -8,7 +8,7 @@ import type {
 	SessionTreeEntry,
 } from "../types.ts";
 import { SessionError, toError } from "../types.ts";
-import { getFileSystemResultOrThrow } from "./repo-utils.ts";
+import { advanceCompactionTraversal, getFileSystemResultOrThrow } from "./repo-utils.ts";
 
 type JsonlSessionStorageFileSystem = Pick<FileSystem, "readTextFile" | "readTextLines" | "writeFile" | "appendFile">;
 
@@ -355,12 +355,9 @@ export class JsonlSessionStorage implements SessionStorage<JsonlSessionMetadata>
 		if (!current) throw new SessionError("not_found", `Entry ${leafId} not found`);
 		while (current) {
 			path.unshift(current);
-			if (stopAtEntryId !== null && current.id === stopAtEntryId) break;
-			if (current.type === "compaction") {
-				if (current.retainedTail) break;
-				stopAtEntryId = current.firstKeptEntryId ?? null;
-			}
-			if (!current.parentId) break;
+			const traversal = advanceCompactionTraversal(current, stopAtEntryId);
+			stopAtEntryId = traversal.stopAtEntryId;
+			if (traversal.stop || !current.parentId) break;
 			const parent = this.byId.get(current.parentId);
 			if (!parent) throw new SessionError("invalid_session", `Entry ${current.parentId} not found`);
 			current = parent;

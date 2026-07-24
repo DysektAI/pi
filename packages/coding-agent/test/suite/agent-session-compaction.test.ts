@@ -207,6 +207,26 @@ describe("AgentSession compaction characterization", () => {
 		expect(getStreamCallCount()).toBe(1);
 	});
 
+	it("classifies an AbortError from auto-compaction as aborted", async () => {
+		const harness = await createHarness();
+		harnesses.push(harness);
+		seedCompactableSession(harness);
+		harness.session.agent.streamFunction = () => {
+			throw new DOMException("cancelled", "AbortError");
+		};
+		const sessionInternals = harness.session as unknown as SessionWithCompactionInternals;
+
+		await expect(sessionInternals._runAutoCompaction("threshold", false)).resolves.toBe(false);
+
+		expect(harness.eventsOfType("compaction_end").at(-1)).toMatchObject({
+			type: "compaction_end",
+			reason: "threshold",
+			aborted: true,
+			willRetry: false,
+		});
+		expect(harness.eventsOfType("compaction_end").at(-1)).not.toHaveProperty("errorMessage");
+	});
+
 	it("cancels in-progress manual compaction when abortCompaction is called", async () => {
 		const harness = await createHarness({
 			settings: { compaction: { keepRecentTokens: 1 } },

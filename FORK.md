@@ -15,6 +15,37 @@ This repository is a fork of [`earendil-works/pi`](https://github.com/earendil-w
 report when upstream appears to have absorbed one. It does not control git
 history or branch rebuilding.
 
+## Releases and self-update
+
+Fork source releases are built only from `local` and use the version format
+`<upstream-version>+local.<N>`. They are published as GitHub releases in
+`DysektAI/pi`; the workspace package versions remain at the upstream version.
+
+A Pi process running from a verified fork source checkout follows only this
+fork release channel. Verification requires the checkout to contain `.git`,
+`.fork/local-version`, and the expected `packages/coding-agent/package.json`.
+Its automatic version check queries the latest `DysektAI/pi` GitHub release and
+never falls back to the upstream package feed.
+
+For that source installation, `pi update --self` performs the consumer update:
+
+1. Fetch `origin/local` into `refs/remotes/origin/local`.
+2. Switch to `local` (creating its tracking branch when necessary).
+3. Fast-forward `local` to `origin/local`.
+4. Run `npm ci --ignore-scripts` at the repository root.
+5. Rebuild the monorepo.
+
+This source-checkout path is supported on Windows, macOS, and Linux when Git,
+Node.js, and npm are available. It does not run `fork-sync.sh`, merge
+`upstream/main`, install the private repository root through npm, or require a
+release `.tgz` asset. The checkout must be clean enough for Git to switch and
+fast-forward safely; failures stop and print the exact fallback command.
+
+npm, pnpm, yarn, and Bun global installations are upstream package installs,
+not fork source checkouts. They continue to use the published upstream package
+channel. To run and self-update the fork, launch Pi from the `local` source
+checkout.
+
 ## Syncing with upstream
 
 ```bash
@@ -28,14 +59,16 @@ The script:
 
 1. Requires a clean `local` checkout.
 2. Fetches `upstream` and `origin`.
-3. Moves the local `main` mirror to `upstream/main` and pushes that mirror.
+3. Moves the local `main` mirror to `upstream/main`.
 4. Reports fork patches that upstream may have absorbed.
 5. Tags the current `local` tip as `backup/sync-<timestamp>/local`.
 6. Merges `main` into `local`.
 7. Takes upstream versions of conflicted generated model catalogs, then
    regenerates them during the build.
 8. Stops on genuine source overlap instead of guessing.
-9. Builds, runs the focused fork checks, commits, and pushes `local`.
+9. Builds, runs the focused fork checks, and commits the merge.
+10. Atomically pushes the upstream mirror to `origin/main` and the fork result
+    to `origin/local`, so either both validated refs advance or neither does.
 
 This uses normal merge history: no routine rebases, branch reconstruction, or
 force-pushes. A conflict is therefore tied to real overlapping edits, not to
@@ -49,11 +82,13 @@ when the GitHub workflow is enabled.
 
 The scheduler should run `./fork-sync.sh`. If it fails, inspect the conflicting
 files, resolve them on `local`, complete the merge, run the checks, and push.
-Do not run `pi update` for the fork: that installs the official package rather
-than integrating upstream source.
+This is the maintainer path that integrates new upstream source and publishes a
+validated `origin/local` for source installations to consume.
 
-The fork launcher should keep `PI_SKIP_VERSION_CHECK=1`; successful sync runs
-are the fork's update mechanism.
+Do not substitute `pi update --self` for fork synchronization. Self-update only
+fast-forwards a consumer checkout to the already-published `origin/local`; it
+never fetches or merges `upstream/main`. Conversely, fork launchers that want
+release notifications must not set `PI_SKIP_VERSION_CHECK=1`.
 
 ## Absorbed upstream features
 

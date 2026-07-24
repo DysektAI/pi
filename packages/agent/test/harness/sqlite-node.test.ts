@@ -1,3 +1,4 @@
+import { symlinkSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createNodeSqliteFactory } from "../../../storage/sqlite-node/src/index.ts";
@@ -19,15 +20,17 @@ describe("sqlite-node adapter", () => {
 		}
 	});
 
-	it("serializes transactions opened through separate wrappers", async () => {
+	it("serializes transactions opened through separate file aliases", async () => {
 		const root = createTempDir();
 		const databasePath = join(root, "transactions.sqlite");
+		const aliasPath = join(root, "transactions-alias.sqlite");
 		const sqlite = createNodeSqliteFactory();
 		const first = await sqlite.open(databasePath);
-		const second = await sqlite.open(databasePath);
+		await first.exec("CREATE TABLE counters (value INTEGER NOT NULL)");
+		await first.prepare("INSERT INTO counters (value) VALUES (0)").run();
+		symlinkSync(databasePath, aliasPath);
+		const second = await sqlite.open(aliasPath);
 		try {
-			await first.exec("CREATE TABLE counters (value INTEGER NOT NULL)");
-			await first.prepare("INSERT INTO counters (value) VALUES (0)").run();
 			await Promise.all(
 				[first, second].map((db) =>
 					db.transaction(async () => {
@@ -40,6 +43,26 @@ describe("sqlite-node adapter", () => {
 			await expect(first.prepare("SELECT value FROM counters").get<{ value: number }>()).resolves.toEqual({
 				value: 2,
 			});
+		} finally {
+			await first.close();
+			await second.close();
+		}
+	});
+
+	it("rejects nested transactions on the same database instead of deadlocking", async () => {
+		const root = createTempDir();
+		const databasePath = join(root, "nested.sqlite");
+		const sqlite = createNodeSqliteFactory();
+		const first = await sqlite.open(databasePath);
+		const second = await sqlite.open(databasePath);
+		try {
+			await expect(
+				first.transaction(async () =>
+					second.transaction(async () => {
+						await second.exec("SELECT 1");
+					}),
+				),
+			).rejects.toThrow("Nested transactions on the same SQLite database are not supported");
 		} finally {
 			await first.close();
 			await second.close();

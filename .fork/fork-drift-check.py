@@ -11,6 +11,7 @@ Exit codes:
 """
 
 import json
+import os
 import re
 import subprocess
 import sys
@@ -24,7 +25,8 @@ C_CYAN = "\033[1;36m"
 C_DIM = "\033[2m"
 SEMVER = re.compile(
     r"^(?:v)?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)"
-    r"(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z.-]+)?$"
+    r"(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?"
+    r"(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$"
 )
 
 
@@ -33,34 +35,38 @@ class ProbeError(Exception):
 
 
 def run_git(*args):
+    env = dict(os.environ)
+    env["LC_ALL"] = "C"
     return subprocess.run(
-        ["git", *args], capture_output=True, text=True, encoding="utf-8", errors="replace"
+        ["git", *args], capture_output=True, text=True, encoding="utf-8", errors="replace", env=env
     )
 
 
-def validate_ref(ref):
+def validate_ref(ref, validated_refs):
+    if ref in validated_refs:
+        return
     result = run_git("rev-parse", "--verify", f"{ref}^{{commit}}")
     if result.returncode != 0:
         raise ProbeError(f"invalid or unfetched ref {ref}: {result.stderr.strip()}")
+    validated_refs.add(ref)
+
+
+def git_path_exists(ref, path):
+    """Use machine-readable tree output instead of localized Git diagnostics."""
+    result = run_git("ls-tree", "-z", "--name-only", ref, "--", path)
+    if result.returncode != 0:
+        raise ProbeError(f"git ls-tree {ref} -- {path} failed: {result.stderr.strip()}")
+    return path in result.stdout.split("\0")
 
 
 def git_show(ref, path):
     """Return file contents at <ref>:<path>, or None if the path is absent."""
+    if not git_path_exists(ref, path):
+        return None
     result = run_git("show", f"{ref}:{path}")
     if result.returncode == 0:
         return result.stdout
-    if "does not exist in" in result.stderr or "exists on disk, but not in" in result.stderr:
-        return None
     raise ProbeError(f"git show {ref}:{path} failed: {result.stderr.strip()}")
-
-
-def git_path_exists(ref, path):
-    result = run_git("cat-file", "-e", f"{ref}:{path}")
-    if result.returncode == 0:
-        return True
-    if "does not exist in" in result.stderr or "exists on disk, but not in" in result.stderr:
-        return False
-    raise ProbeError(f"git cat-file {ref}:{path} failed: {result.stderr.strip()}")
 
 
 def parse_semver(text):
@@ -70,6 +76,8 @@ def parse_semver(text):
     core = tuple(int(value) for value in match.group(1, 2, 3))
     prerelease = match.group(4)
     identifiers = None if prerelease is None else prerelease.split(".")
+    if identifiers is not None and any(identifier.isdigit() and len(identifier) > 1 and identifier[0] == "0" for identifier in identifiers):
+        return None
     return core, identifiers
 
 
@@ -133,15 +141,15 @@ def validate_manifest(manifest):
             raise ProbeError(f"{context}.drift has unknown probe type {probe_type}")
         for key in required:
             require_string(probe, key, f"{context}.drift")
-        if "ref" in probe and not isinstance(probe["ref"], str):
-            raise ProbeError(f"{context}.drift.ref must be a string")
+        if "ref" in probe and (not isinstance(probe["ref"], str) or not probe["ref"]):
+            raise ProbeError(f"{context}.drift.ref must be a non-empty string")
 
 
-def evaluate(probe, ref, ref_overridden):
+def evaluate(probe, ref, ref_overridden, validated_refs):
     """Return (status, detail), with status ACTIVE/REDUNDANT/CHECK/ERROR."""
     probe_type = probe["type"]
     probe_ref = ref if ref_overridden else probe.get("ref", ref)
-    validate_ref(probe_ref)
+    validate_ref(probe_ref, validated_refs)
 
     if probe_type in ("grep-absent", "grep-present"):
         content = git_show(probe_ref, probe["file"])
@@ -211,7 +219,10 @@ def main(argv):
         ref = ref_arg or manifest.get("upstreamRef", "upstream/main")
         if not isinstance(ref, str) or not ref:
             raise ProbeError("upstreamRef must be a non-empty string")
-        validate_ref(ref)
+        validated_refs = set()
+        fallback_is_used = bool(ref_arg) or any("ref" not in feature["drift"] for feature in manifest["features"])
+        if fallback_is_used:
+            validate_ref(ref, validated_refs)
     except (OSError, json.JSONDecodeError, ProbeError) as error:
         sys.stderr.write(f"cannot use manifest {manifest_path}: {error}\n")
         return 2
@@ -224,7 +235,7 @@ def main(argv):
     width = max((len(feature["branch"]) for feature in manifest["features"]), default=10)
     for feature in manifest["features"]:
         try:
-            status, detail = evaluate(feature["drift"], ref, bool(ref_arg))
+            status, detail = evaluate(feature["drift"], ref, bool(ref_arg), validated_refs)
         except (ProbeError, KeyError, TypeError, ValueError) as error:
             status, detail = "ERROR", str(error)
         if status == "ACTIVE":

@@ -302,6 +302,36 @@ describe("resolveModelScopeWithDiagnostics", () => {
 		expect(result.scopedModels[0].thinkingLevel).toBe("high");
 		expect(result.diagnostics).toEqual([]);
 	});
+
+	test("resolves bracketed model ids before diagnosing an invalid thinking level", async () => {
+		const bracketedModel: Model<"anthropic-messages"> = {
+			id: "bracketed-model[1m]",
+			name: "Bracketed Model",
+			api: "anthropic-messages",
+			provider: "custom",
+			baseUrl: "https://example.invalid",
+			reasoning: true,
+			input: ["text"],
+			cost: { input: 1, output: 2, cacheRead: 0.1, cacheWrite: 1 },
+			contextWindow: 128000,
+			maxTokens: 8192,
+		};
+		const registry = {
+			getAvailable: () => [...allModels, bracketedModel],
+		} as unknown as Parameters<typeof resolveModelScopeWithDiagnostics>[1];
+
+		const result = await resolveModelScopeWithDiagnostics(["custom/bracketed-model[1m]:invalid"], registry);
+
+		expect(result.scopedModels).toEqual([{ model: bracketedModel }]);
+		expect(result.diagnostics).toEqual([
+			{
+				type: "warning",
+				message:
+					'Invalid thinking level "invalid" in pattern "custom/bracketed-model[1m]:invalid". Using default instead.',
+				pattern: "custom/bracketed-model[1m]:invalid",
+			},
+		]);
+	});
 });
 
 describe("resolveCliModel", () => {

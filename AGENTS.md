@@ -9,6 +9,20 @@
 - When the user asks a question, answer it first before making edits or running implementation commands.
 - When responding to user feedback or an analysis, explicitly say whether you agree or disagree before saying what you changed.
 
+## Fork Architecture and Updates
+
+This repository has one authoritative downstream release model. Do not reopen or replace it unless the user explicitly asks for a redesign:
+
+- `upstream/main` is the canonical upstream history. `main` is an exact mirror pointer for it and must not contain DysektAI changes.
+- `local` is the single long-lived DysektAI branch: upstream history plus fork commits. Fork source releases and `+local.N` tags are built only from `local`.
+- `fork-sync.sh` is a maintainer operation. It advances the `main` mirror from `upstream/main`, merges that mirror into `local`, validates both refs, and atomically publishes `main` and `local`. It is not the end-user self-update command.
+- A source installation is recognized only from a checkout containing `.git`, `.fork/local-version`, and the expected `packages/coding-agent/package.json`. Its automatic version check queries only the latest `DysektAI/pi` GitHub release. It must never fall back to the upstream package feed.
+- For a verified source checkout, `pi update --self` fetches `origin/local`, switches to `local`, fast-forwards to `origin/local`, runs `npm ci --ignore-scripts`, and rebuilds. It does not merge `upstream/main`, run `fork-sync.sh`, install the repository root through npm, or require a release tarball asset.
+- npm/pnpm/yarn/Bun installations are upstream package installations, not fork source checkouts. They remain on the published upstream package update channel.
+- If asked how fork updates work, state this model directly. Do not propose installing `github:DysektAI/pi`, adding a release `.tgz`, or replacing self-update with a `fork-sync.sh` instruction unless the user asks to change the established model.
+
+See [FORK.md](FORK.md) for the operational guide.
+
 ## Code Quality
 
 - Read files in full before wide-ranging changes, before editing files you have not fully inspected, and when asked to investigate or audit. Do not rely on search snippets for broad changes.
@@ -73,6 +87,16 @@ When reviewing PRs:
 - Do not run `gh pr checkout`, `git switch`, or otherwise move the worktree to the PR branch unless the user explicitly asks.
 - Use `gh pr view`, `gh pr diff`, `gh api`, and local `git show`/`git diff` against fetched refs to inspect PR metadata, commits, and patches without changing branches.
 - If you need PR file contents, fetch/read them into temporary files or use `git show <ref>:<path>` without switching branches.
+
+Before merging a PR, all of the following are mandatory merge gates:
+
+1. Fetch every review and review comment with pagination. Sort reviews by `submittedAt`; never assume the REST response order or use `reviews[0]` as the latest review.
+2. Query `pullRequest.reviewThreads` through GitHub GraphQL, paginate until `hasNextPage` is false, and inspect `isResolved`, `isOutdated`, and every comment in each thread. The REST review-comments endpoint does not expose thread resolution and must not be used to infer it.
+3. For every non-outdated thread: validate the finding, implement and test valid findings, and reply with a technical rationale for invalid findings. Mark a thread resolved only after its fix or rationale is pushed to the PR.
+4. Re-fetch reviews and threads after every head update and wait for in-progress reviewers to finish. A summary containing `issues found` or any non-outdated unresolved thread is a merge blocker. Automated findings are not optional merely because their check reports success or their review state is `COMMENTED`.
+5. Require all required checks to pass on the exact current PR head SHA. A successful run on an ancestor does not count; `[skip ci]` on the latest commit does not waive this gate.
+6. Immediately before merge, record the head SHA, total/resolved/unresolved thread counts, latest review summaries, and checks attached to that SHA. The invariant is zero non-outdated unresolved threads and zero unaddressed review findings. If this cannot be proven, do not merge.
+7. After merge, verify the merge commit contains the reviewed head SHA. Do not create a release until the merge and release checks succeed.
 
 When creating issues:
 

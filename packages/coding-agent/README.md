@@ -309,7 +309,7 @@ Use `/trust` in interactive mode to save a project trust decision for future ses
 
 Pi has two separate startup features:
 
-- **Update check:** fetches `https://pi.dev/api/latest-version` to check whether a newer Pi version exists. Disable it with `PI_SKIP_VERSION_CHECK=1`. Disabling update checks only turns off this check.
+- **Update check:** upstream package installs fetch `https://pi.dev/api/latest-version`, while verified DysektAI fork source checkouts fetch the latest `DysektAI/pi` GitHub release instead. Disable it with `PI_SKIP_VERSION_CHECK=1`. Disabling update checks only turns off this check.
 - **Install/update telemetry:** after first install or a changelog-detected update, sends an anonymous version ping to `https://pi.dev/api/report-install`. This setting also controls optional provider attribution headers for OpenRouter, Cloudflare, and direct NVIDIA NIM requests. Opt out by setting `enableInstallTelemetry` to `false` in `settings.json`, or by setting `PI_TELEMETRY=0`. This does not disable update checks; Pi may still contact `pi.dev` for the latest version unless update checks are disabled or offline mode is enabled.
 
 Use `--offline` or `PI_OFFLINE=1` to disable all startup network operations described here, including update checks, package update checks, and install/update telemetry.
@@ -433,6 +433,8 @@ pi config                               # enable/disable extensions, skills, pro
 
 Packages install to `~/.pi/agent/git/` (git) or `~/.pi/agent/npm/` (npm). Use `-l` for project-local installs (`.pi/git/`, `.pi/npm/`). Git `@ref` values are pinned tags or commits; pinned packages are skipped by `pi update --extensions` and `pi update --all`, so use `pi install git:host/user/repo@new-ref` to move an existing package to a new ref. Git packages install dependencies with `npm install --omit=dev` by default, so runtime deps must be listed under `dependencies`; when `npmCommand` is configured, git packages use plain `install` for compatibility with wrappers. If you use a Node version manager and want package installs to reuse a stable npm context, set `npmCommand` in `settings.json`, for example `["mise", "exec", "node@20", "--", "npm"]`.
 
+For the DysektAI source fork, a verified `local` checkout checks only `DysektAI/pi` releases; `pi update --self` fast-forwards `origin/local` and rebuilds the monorepo instead of installing from the upstream package channel. See the repository root `FORK.md`.
+
 Create a package by adding a `pi` key to `package.json`:
 
 ```json
@@ -531,7 +533,7 @@ pi list                      # List installed packages
 pi config                    # Enable/disable package resources
 ```
 
-`pi config` and project package commands accept `--approve`/`--no-approve` to trust or ignore project-local settings for one command. `pi update` never prompts for project trust.
+`pi config` and project package commands accept `--approve`/`--no-approve` to trust or ignore project-local settings for one command. `pi update` never prompts for project trust. DysektAI fork source checkouts use the fork release/update flow described in the repository root `FORK.md`; upstream package-manager installs continue using the upstream package feed.
 
 ### Modes
 
