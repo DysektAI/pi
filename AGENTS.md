@@ -92,11 +92,11 @@ Before merging a PR, all of the following are mandatory merge gates:
 
 1. Fetch every review and review comment with pagination. Sort reviews by `submittedAt`; never assume the REST response order or use `reviews[0]` as the latest review.
 2. Query `pullRequest.reviewThreads` through GitHub GraphQL, paginate until `hasNextPage` is false, and inspect `isResolved`, `isOutdated`, and every comment in each thread. The REST review-comments endpoint does not expose thread resolution and must not be used to infer it.
-3. For every non-outdated thread: validate the finding, implement and test valid findings, and reply with a technical rationale for invalid findings. Mark a thread resolved only after its fix or rationale is pushed to the PR.
+3. For every non-outdated thread: validate the finding, implement and test valid findings, and reply with a technical rationale for invalid findings. Mark a thread resolved only after its fix is pushed or its rationale is posted to the PR.
 4. Re-fetch reviews and threads after every head update and wait for in-progress reviewers to finish. A summary containing `issues found` or any non-outdated unresolved thread is a merge blocker. Automated findings are not optional merely because their check reports success or their review state is `COMMENTED`.
 5. Require all required checks to pass on the exact current PR head SHA. A successful run on an ancestor does not count; `[skip ci]` on the latest commit does not waive this gate.
 6. Immediately before merge, record the head SHA, total/resolved/unresolved thread counts, latest review summaries, and checks attached to that SHA. The invariant is zero non-outdated unresolved threads and zero unaddressed review findings. If this cannot be proven, do not merge.
-7. After merge, verify the merge commit contains the reviewed head SHA. Do not create a release until the merge and release checks succeed.
+7. After merge, verify the resulting commit contains the reviewed changes. When GitHub creates a merge commit, also verify that it has the reviewed head SHA as a parent. Do not create a release until the merge and release checks succeed.
 
 When creating issues:
 

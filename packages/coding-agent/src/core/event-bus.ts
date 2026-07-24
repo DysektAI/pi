@@ -36,7 +36,9 @@ export function createEventBus(onError?: EventBusErrorHandler): EventBusControll
 			const safeHandler = (data: unknown): void => {
 				try {
 					const result = handler(data);
-					if (result instanceof Promise) void result.catch(handleError);
+					if (result != null && typeof result === "object" && "then" in result) {
+						void Promise.resolve(result).catch(handleError);
+					}
 				} catch (error) {
 					void handleError(error);
 				}

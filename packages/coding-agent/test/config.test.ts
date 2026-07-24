@@ -166,6 +166,7 @@ function createFakeBunScript(bunBin: string): string {
 
 describe("detectInstallMethod", () => {
 	test("detects pnpm from Windows .pnpm install paths", () => {
+		process.env.PI_PACKAGE_DIR = "C:\\Users\\Admin\\pnpm-global\\node_modules\\@earendil-works\\pi-coding-agent";
 		setExecPath(
 			"C:\\Users\\Admin\\Documents\\pnpm-repository\\global\\5\\.pnpm\\@earendil-works+pi-coding-agent@0.67.68\\node_modules\\@earendil-works\\pi-coding-agent\\dist\\cli.js",
 		);
@@ -208,13 +209,13 @@ describe("detectInstallMethod", () => {
 			},
 			{
 				command: "git",
-				args: ["-C", root, "switch", "local"],
-				display: `git -C ${root} switch local`,
+				args: ["-C", root, "checkout", "-B", "local", "origin/local"],
+				display: `git -C ${root} checkout -B local origin/local`,
 			},
 			{
-				command: "git",
-				args: ["-C", root, "merge", "--ff-only", "origin/local"],
-				display: `git -C ${root} merge --ff-only origin/local`,
+				command: "npm",
+				args: ["--prefix", root, "ci", "--ignore-scripts"],
+				display: `npm --prefix ${root} ci --ignore-scripts`,
 			},
 		]);
 	});

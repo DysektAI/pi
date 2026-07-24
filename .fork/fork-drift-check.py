@@ -56,7 +56,9 @@ def git_path_exists(ref, path):
     result = run_git("ls-tree", "-z", "--name-only", ref, "--", path)
     if result.returncode != 0:
         raise ProbeError(f"git ls-tree {ref} -- {path} failed: {result.stderr.strip()}")
-    return path in result.stdout.split("\0")
+    # ls-tree may canonicalize the path (strip ./ prefix, traverse dirs).
+    # Any non-empty output confirms the path exists at this ref.
+    return bool(result.stdout)
 
 
 def git_show(ref, path):

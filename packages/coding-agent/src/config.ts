@@ -100,6 +100,10 @@ function isSourceCheckout(): boolean {
 }
 
 export function detectInstallMethod(): InstallMethod {
+	// Check source checkout first so Bun/Node-launched fork checkouts are
+	// classified as source before the runtime/package-manager heuristics.
+	if (isSourceCheckout()) return "source";
+
 	if (isBunBinary) {
 		return "bun-binary";
 	}
@@ -118,9 +122,6 @@ export function detectInstallMethod(): InstallMethod {
 	if (resolvedPath.includes("/npm/") || resolvedPath.includes("/node_modules/")) {
 		return "npm";
 	}
-
-	// Detect source checkout (e.g. ~/pi-fork/packages/coding-agent)
-	if (isSourceCheckout()) return "source";
 
 	return "unknown";
 }
@@ -223,16 +224,25 @@ function getSelfUpdateCommandForMethod(
 				"origin",
 				"local:refs/remotes/origin/local",
 			]);
-			// `git switch local` creates a tracking branch when only origin/local exists,
-			// while continuing to work for normal clones that already have local.
-			const switchBranch = makeSelfUpdateCommandStep("git", ["-C", repoRoot, "switch", "local"]);
-			const update = makeSelfUpdateCommandStep("git", ["-C", repoRoot, "merge", "--ff-only", "origin/local"]);
+			// `git checkout -B` creates local from origin/local when absent
+			// (needed for restricted-refspec clones) and resets it to
+			// origin/local otherwise. Self-update only runs when a newer
+			// release was detected, and the exclusive fork release channel
+			// guarantees origin/local is the intended fast-forward target.
+			const switchBranch = makeSelfUpdateCommandStep("git", [
+				"-C",
+				repoRoot,
+				"checkout",
+				"-B",
+				"local",
+				"origin/local",
+			]);
 			const install = makeSelfUpdateCommandStep("npm", ["--prefix", repoRoot, "ci", "--ignore-scripts"]);
 			const build = makeSelfUpdateCommandStep("npm", ["--prefix", repoRoot, "run", "build"]);
 			return {
 				...fetch,
-				display: [fetch, switchBranch, update, install, build].map((step) => step.display).join(" && "),
-				steps: [fetch, switchBranch, update, install, build],
+				display: [fetch, switchBranch, install, build].map((step) => step.display).join(" && "),
+				steps: [fetch, switchBranch, install, build],
 			};
 		}
 		case "unknown":
