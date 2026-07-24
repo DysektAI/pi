@@ -1,4 +1,4 @@
-import type { SessionTreeEntry } from "@earendil-works/pi-agent-core";
+import { advanceCompactionTraversal, type SessionTreeEntry } from "@earendil-works/pi-agent-core";
 import type { SqliteDatabase } from "../types.ts";
 import { decodeEntry, type SessionEntryRow } from "./session-entries.ts";
 import { invalidSession } from "./shared.ts";
@@ -53,16 +53,13 @@ export async function getMaterializedBranchPathOrCompaction(
 			throw invalidSession(`invalid entry row for branch entry ${branchRow.entry_id}`);
 		}
 	}
-	const bounded: SessionTreeEntry[] = [];
+	let retainedStart = entries.length;
 	let stopAtEntryId: string | null = null;
 	for (let index = entries.length - 1; index >= 0; index--) {
-		const entry = entries[index];
-		bounded.unshift(entry);
-		if (stopAtEntryId !== null && entry.id === stopAtEntryId) break;
-		if (entry.type === "compaction") {
-			if (entry.retainedTail) break;
-			stopAtEntryId = entry.firstKeptEntryId ?? null;
-		}
+		retainedStart = index;
+		const traversal = advanceCompactionTraversal(entries[index], stopAtEntryId);
+		stopAtEntryId = traversal.stopAtEntryId;
+		if (traversal.stop) break;
 	}
-	return bounded;
+	return entries.slice(retainedStart);
 }

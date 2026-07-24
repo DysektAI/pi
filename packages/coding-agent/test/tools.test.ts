@@ -1,6 +1,6 @@
 import { applyPatch } from "diff";
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "fs";
-import { tmpdir } from "os";
+import { homedir, tmpdir } from "os";
 import { join } from "path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { executeBashWithOperations } from "../src/core/bash-executor.ts";
@@ -77,6 +77,22 @@ describe("Coding Agent Tools", () => {
 			// No truncation message since file fits within limits
 			expect(getTextOutput(result)).not.toContain("Use offset=");
 			expect(result.details).toBeUndefined();
+		});
+
+		it("uses the resolved absolute path in oversized-line shell hints", async () => {
+			const filename = `.pi-read-long-line-${process.pid}-${Date.now()}.txt`;
+			const testFile = join(homedir(), filename);
+			try {
+				writeFileSync(testFile, "x".repeat(60 * 1024));
+
+				const result = await readTool.execute("test-call-tilde", { path: `~/${filename}` });
+				const output = getTextOutput(result);
+
+				expect(output).toContain(`sed -n '1p' '${testFile}'`);
+				expect(output).not.toContain(`'~/${filename}'`);
+			} finally {
+				rmSync(testFile, { force: true });
+			}
 		});
 
 		it("should handle non-existent files", async () => {

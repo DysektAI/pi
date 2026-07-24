@@ -13,6 +13,7 @@ import type { ModelRuntime } from "./model-runtime.ts";
 /** Default model IDs for each known provider */
 export const defaultModelPerProvider: Record<KnownProvider, string> = {
 	"amazon-bedrock": "us.anthropic.claude-opus-4-6-v1",
+	"agentrouter": "router",
 	"ant-ling": "Ring-2.6-1T",
 	anthropic: "claude-opus-4-8",
 	openai: "gpt-5.5",
@@ -295,9 +296,31 @@ export async function resolveModelScopeWithDiagnostics(
 
 			if (colonIdx !== -1) {
 				const suffix = pattern.substring(colonIdx + 1);
+				const prefix = pattern.substring(0, colonIdx);
 				if (isValidThinkingLevel(suffix)) {
 					thinkingLevel = suffix;
-					globPattern = pattern.substring(0, colonIdx);
+					globPattern = prefix;
+				} else {
+					const exactPrefixMatch = findExactModelReferenceMatch(prefix, availableModels);
+					if (exactPrefixMatch) {
+						if (!scopedModels.find((sm) => modelsAreEqual(sm.model, exactPrefixMatch))) {
+							scopedModels.push({ model: exactPrefixMatch });
+						}
+						diagnostics.push({
+							type: "warning",
+							message: `Invalid thinking level "${suffix}" in pattern "${pattern}". Using default instead.`,
+							pattern,
+						});
+						continue;
+					}
+					// For non-exact (glob) prefixes, strip the invalid suffix and
+					// proceed with glob matching, emitting a diagnostic.
+					globPattern = prefix;
+					diagnostics.push({
+						type: "warning",
+						message: `Invalid thinking level "${suffix}" in pattern "${pattern}". Using default instead.`,
+						pattern,
+					});
 				}
 			}
 

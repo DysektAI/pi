@@ -153,6 +153,11 @@ Examples:
 
 Update pi, installed packages, or model catalogs.
 
+DysektAI fork source checkouts check only the latest DysektAI/pi release and
+self-update by fetching origin/local, switching to local, fast-forwarding
+(fails safely if local has diverged), and rebuilding the checkout.
+Package-manager installs use the upstream package feed.
+
 Options:
   --self                  Update pi only (default when no target is given)
   --extensions            Update installed packages only
@@ -837,9 +842,16 @@ export async function handlePackageCommand(
 						return true;
 					}
 					const installMethod = detectInstallMethod();
-					if (process.platform === "win32" && installMethod !== "npm" && installMethod !== "pnpm") {
+					if (
+						process.platform === "win32" &&
+						installMethod !== "npm" &&
+						installMethod !== "pnpm" &&
+						installMethod !== "source"
+					) {
 						console.error(
-							chalk.red(`${APP_NAME} self-update on Windows is only supported for npm and pnpm installs.`),
+							chalk.red(
+								`${APP_NAME} self-update on Windows is only supported for npm, pnpm, and source installs.`,
+							),
 						);
 						console.error(chalk.dim(`Detected install method: ${installMethod}. Update ${APP_NAME} manually.`));
 						process.exitCode = 1;

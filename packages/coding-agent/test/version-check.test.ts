@@ -42,6 +42,10 @@ describe("version checks", () => {
 		expect(comparePackageVersions("5.0.0-beta.20", "5.0.0-beta.9")).toBeGreaterThan(0);
 		expect(isNewerPackageVersion("0.70.5", "0.70.5")).toBe(false);
 		expect(isNewerPackageVersion("0.70.6", "0.70.5")).toBe(true);
+		expect(isNewerPackageVersion("0.82.0+local.9", "0.82.0+local.8")).toBe(true);
+		expect(isNewerPackageVersion("0.82.0.local.9", "0.82.0.local.8")).toBe(true);
+		expect(isNewerPackageVersion("0.81.1+local.99", "0.82.0+local.1")).toBe(false);
+		expect(isNewerPackageVersion("not-semver", "0.82.0+local.1")).toBe(false);
 	});
 
 	it("returns only newer versions", async () => {
@@ -94,31 +98,29 @@ describe("version checks", () => {
 		process.env.PI_PACKAGE_DIR = process.cwd();
 		const fetchMock = vi.fn(async () =>
 			Response.json({
-				tag_name: "1.2.3.local.9",
+				tag_name: "1.2.3+local.9",
 				body: "source build",
-				html_url: "https://github.com/DysektAI/pi/releases/tag/1.2.3.local.9",
+				html_url: "https://github.com/DysektAI/pi/releases/tag/1.2.3%2Blocal.9",
 			}),
 		);
 		vi.stubGlobal("fetch", fetchMock);
 
-		await expect(getLatestPiRelease("1.2.3.local.8")).resolves.toEqual({
-			version: "1.2.3.local.9",
+		await expect(getLatestPiRelease("1.2.3+local.8")).resolves.toEqual({
+			version: "1.2.3+local.9",
 			note: "source build",
-			url: "https://github.com/DysektAI/pi/releases/tag/1.2.3.local.9",
+			url: "https://github.com/DysektAI/pi/releases/tag/1.2.3%2Blocal.9",
 		});
 		expect(fetchMock).toHaveBeenCalledOnce();
 	});
 
-	it("falls back to upstream when the source release request fails", async () => {
+	it("does not fall back to upstream when the fork release request fails", async () => {
 		process.env.PI_PACKAGE_DIR = process.cwd();
-		const fetchMock = vi
-			.fn()
-			.mockRejectedValueOnce(new Error("GitHub unavailable"))
-			.mockResolvedValueOnce(Response.json({ version: "1.2.4" }));
+		const fetchMock = vi.fn().mockRejectedValueOnce(new Error("GitHub unavailable"));
 		vi.stubGlobal("fetch", fetchMock);
 
-		await expect(getLatestPiRelease("1.2.3")).resolves.toEqual({ version: "1.2.4" });
-		expect(fetchMock).toHaveBeenCalledTimes(2);
+		await expect(getLatestPiRelease("1.2.3+local.8")).rejects.toThrow("GitHub unavailable");
+		expect(fetchMock).toHaveBeenCalledOnce();
+		expect(fetchMock.mock.calls[0][0]).toBe("https://api.github.com/repos/DysektAI/pi/releases/latest");
 	});
 
 	it("skips automatic api calls when version checks are disabled", async () => {

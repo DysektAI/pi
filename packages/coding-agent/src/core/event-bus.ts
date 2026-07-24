@@ -18,25 +18,30 @@ export function createEventBus(onError?: EventBusErrorHandler): EventBusControll
 			emitter.emit(channel, data);
 		},
 		on: (channel, handler) => {
-			const reportError = (error: unknown): void => {
-				process.stderr.write(
-					`Event handler error (${channel}): ${error instanceof Error ? error.message : String(error)}\n`,
-				);
+			const reportError = (label: string, error: unknown): void => {
+				process.stderr.write(`${label} (${channel}): ${error instanceof Error ? error.message : String(error)}\n`);
+			};
+			const handleError = async (error: unknown): Promise<void> => {
+				if (!onError) {
+					reportError("Event handler error", error);
+					return;
+				}
+				try {
+					await onError(channel, error);
+				} catch (onErrorFailure) {
+					reportError("Event handler error", error);
+					reportError("Event error-handler failure", onErrorFailure);
+				}
 			};
 			const safeHandler = (data: unknown): void => {
-				Promise.resolve()
-					.then(() => handler(data))
-					.catch(async (error: unknown) => {
-						if (!onError) {
-							reportError(error);
-							return;
-						}
-						try {
-							await onError(channel, error);
-						} catch (onErrorFailure) {
-							reportError(onErrorFailure);
-						}
-					});
+				try {
+					const result = handler(data);
+					if (result != null && typeof result === "object" && "then" in result) {
+						void Promise.resolve(result).catch(handleError);
+					}
+				} catch (error) {
+					void handleError(error);
+				}
 			};
 			emitter.on(channel, safeHandler);
 			return () => emitter.off(channel, safeHandler);

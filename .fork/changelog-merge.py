@@ -118,16 +118,19 @@ def main():
         return 1
 
     bb = unreleased_bounds(base)
-    base_sections = {}
-    if bb is not None:
-        base_sections, _ = parse_subsections(base, *bb)
+    if bb is None:
+        # Without a base boundary we cannot distinguish released content from
+        # fork additions. Never rebuild from upstream and risk dropping local data.
+        sys.stderr.write("changelog-merge: merge base has no [Unreleased]; deferring to manual merge\n")
+        return 1
+    base_sections, _ = parse_subsections(base, *bb)
 
     ours_sections, ours_order = parse_subsections(ours, *ob)
 
     # During `git merge main` ours is the fork and theirs is upstream. Only
     # auto-resolve when the fork side changed the base additively: upstream may
     # release/move entries freely, while local removals or edits need review.
-    if bb is not None and outside_unreleased(ours, ob) != outside_unreleased(base, bb):
+    if outside_unreleased(ours, ob) != outside_unreleased(base, bb):
         sys.stderr.write("changelog-merge: fork changed content outside [Unreleased]; deferring to manual merge\n")
         return 1
 

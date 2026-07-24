@@ -48,6 +48,25 @@ afterEach(() => {
 	}
 });
 
+function createSourceCheckout(withForkMarkers = true): { root: string; packageDir: string } {
+	const root = mkdtempSync(join(tmpdir(), "pi-source-"));
+	const packageDir = join(root, "packages", "coding-agent");
+	mkdirSync(join(root, ".git"), { recursive: true });
+	mkdirSync(packageDir, { recursive: true });
+	if (withForkMarkers) {
+		mkdirSync(join(root, ".fork"), { recursive: true });
+		writeFileSync(join(root, ".fork", "local-version"), "1.2.3+local.1\n");
+		writeFileSync(
+			join(packageDir, "package.json"),
+			JSON.stringify({ name: "@earendil-works/pi-coding-agent", version: "1.2.3" }),
+		);
+	}
+	tempDir = root;
+	process.env.PI_PACKAGE_DIR = packageDir;
+	setExecPath(join(packageDir, "dist", "cli.js"));
+	return { root, packageDir };
+}
+
 function createNpmPrefixInstall(template = "pi-prefix-"): { prefix: string; packageDir: string } {
 	const prefix = mkdtempSync(join(tmpdir(), template));
 	const root = join(prefix, "lib", "node_modules");
@@ -147,6 +166,7 @@ function createFakeBunScript(bunBin: string): string {
 
 describe("detectInstallMethod", () => {
 	test("detects pnpm from Windows .pnpm install paths", () => {
+		process.env.PI_PACKAGE_DIR = "C:\\Users\\Admin\\pnpm-global\\node_modules\\@earendil-works\\pi-coding-agent";
 		setExecPath(
 			"C:\\Users\\Admin\\Documents\\pnpm-repository\\global\\5\\.pnpm\\@earendil-works+pi-coding-agent@0.67.68\\node_modules\\@earendil-works\\pi-coding-agent\\dist\\cli.js",
 		);
@@ -166,6 +186,38 @@ describe("detectInstallMethod", () => {
 		expect(getUpdateInstruction("@earendil-works/pi-coding-agent")).toBe(
 			"Update @earendil-works/pi-coding-agent using the package manager, wrapper, or source checkout that provides this installation.",
 		);
+	});
+
+	test("does not treat a wrapper host repository as the Pi source checkout", () => {
+		createSourceCheckout(false);
+
+		expect(detectInstallMethod()).toBe("unknown");
+		expect(getSelfUpdateCommand("@earendil-works/pi-coding-agent")).toBeUndefined();
+	});
+
+	test("fetches origin/local before switching a source checkout", () => {
+		const { root } = createSourceCheckout();
+
+		const command = getSelfUpdateCommand("@earendil-works/pi-coding-agent");
+
+		expect(detectInstallMethod()).toBe("source");
+		expect(command?.steps?.filter(s => s.command !== "sh").slice(0, 3)).toEqual([
+			{
+				command: "git",
+				args: ["-C", root, "fetch", "origin", "local:refs/remotes/origin/local"],
+				display: `git -C ${root} fetch origin local:refs/remotes/origin/local`,
+			},
+			{
+				command: "git",
+				args: ["-C", root, "switch", "local"],
+				display: `git -C ${root} switch local`,
+			},
+			{
+				command: "git",
+				args: ["-C", root, "merge", "--ff-only", "origin/local"],
+				display: `git -C ${root} merge --ff-only origin/local`,
+			},
+		]);
 	});
 
 	test("self-updates npm installs from custom prefixes", () => {

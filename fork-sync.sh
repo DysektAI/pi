@@ -16,7 +16,7 @@ done
 
 say() { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
 warn() { printf '\033[1;33m!! %s\033[0m\n' "$*"; }
-die() { printf '\033[1;31mxx %b\033[0m\n' "$*" >&2; exit 1; }
+die() { printf '\033[1;31mxx %s\033[0m\n' "$*" >&2; exit 1; }
 
 for PYTHON_BIN in python3 python py; do
 	command -v "$PYTHON_BIN" >/dev/null 2>&1 && "$PYTHON_BIN" -c 'import sys; raise SystemExit(sys.version_info[0] != 3)' >/dev/null 2>&1 && break
@@ -27,6 +27,7 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 [[ -z "$(git status --porcelain)" ]] || die "Working tree is not clean. Commit or stash changes first."
 [[ "$(git branch --show-current)" == "local" ]] || die "Run fork-sync.sh from the local branch."
+INITIAL_HEAD="$(git rev-parse HEAD)"
 git config user.name >/dev/null 2>&1 || git config user.name "fork-sync"
 git config user.email >/dev/null 2>&1 || git config user.email "fork-sync@users.noreply.github.com"
 [[ ! -x .fork/setup-fork.sh ]] || ./.fork/setup-fork.sh >/dev/null
@@ -37,9 +38,6 @@ git fetch origin --prune
 
 # main is only a local mirror pointer; no checkout or rewritten feature branches.
 git branch -f main upstream/main >/dev/null
-if [[ "$DO_PUSH" -eq 1 ]]; then
-	git push origin upstream/main:main
-fi
 
 if [[ "$DO_DRIFT" -eq 1 && -f .fork/fork-drift-check.py ]]; then
 	say "Checking which fork patches upstream may have absorbed"
@@ -56,38 +54,66 @@ backup="backup/sync-$(date +%Y%m%d-%H%M%S)/local"
 abort_merge() {
 	git merge --abort >/dev/null 2>&1 || true
 }
+restore_checkout() {
+	trap - ERR
+	abort_merge
+	if [[ "$already_current" -eq 1 ]]; then
+		git restore --source="$INITIAL_HEAD" --staged --worktree -- . >/dev/null 2>&1 || true
+		# Clean untracked build artifacts from the failed validation.
+		# The script verified a clean non-ignored tree before starting;
+		# any new untracked files were created by the build/check phase.
+		git clean -fd -- . >/dev/null 2>&1 || true
+	fi
+}
+fail() {
+	local message="$1"
+	restore_checkout
+	die "$message"
+}
+on_error() {
+	local status="$?"
+	restore_checkout
+	exit "$status"
+}
 on_signal() {
 	local status="$1"
-	abort_merge
+	restore_checkout
 	trap - INT TERM
 	exit "$status"
 }
+unexpected_changes() {
+	if [[ "$already_current" -eq 1 ]]; then
+		git status --porcelain
+	else
+		git diff --name-only
+	fi
+}
+
+trap on_error ERR
+trap 'on_signal 130' INT
+trap 'on_signal 143' TERM
 
 if [[ "$already_current" -eq 0 ]]; then
 	git tag "$backup" local
-	trap abort_merge ERR
-	trap 'on_signal 130' INT
-	trap 'on_signal 143' TERM
 
 	say "Merging upstream/main into local"
 	if ! git merge --no-ff --no-commit main; then
-	# Generated catalogs have no hand-written resolution: take upstream, then the
-	# build below regenerates them from the merged sources.
-	mapfile -t conflicted < <(git diff --name-only --diff-filter=U)
-	for file in "${conflicted[@]}"; do
-		case "$file" in
-			packages/ai/src/*.generated.ts|packages/ai/src/providers/*.models.ts)
-				git checkout --theirs -- "$file"
-				git add "$file"
-				;;
-		esac
-	done
+		# Generated catalogs have no hand-written resolution: take upstream, then the
+		# build below regenerates them from the merged sources.
+		mapfile -t conflicted < <(git diff --name-only --diff-filter=U)
+		for file in "${conflicted[@]}"; do
+			case "$file" in
+				packages/ai/src/*.generated.ts|packages/ai/src/providers/*.models.ts)
+					git checkout --theirs -- "$file"
+					git add "$file"
+					;;
+			esac
+		done
 
 		remaining="$(git diff --name-only --diff-filter=U)"
 		if [[ -n "$remaining" ]]; then
 			printf '%s\n' "$remaining" >&2
-			abort_merge
-			die "Upstream overlaps fork code. Run 'git merge main', resolve the listed files on local, test, and commit. Backup: $backup"
+			fail "Upstream overlaps fork code. Run 'git merge main', resolve the listed files on local, test, and commit. Backup: $backup"
 		fi
 	fi
 fi
@@ -104,19 +130,17 @@ if [[ "$DO_TEST" -eq 1 ]]; then
 	# Stage generated model catalogs rewritten by the build. Everything else was
 	# already staged by the merge; an unstaged file here is an unexpected side effect.
 	git add 'packages/ai/src/*.generated.ts' 'packages/ai/src/providers/*.models.ts' 2>/dev/null || true
-	unexpected="$(git diff --name-only)"
+	unexpected="$(unexpected_changes)"
 	if [[ -n "$unexpected" ]]; then
-		abort_merge
-		die "Unexpected build changes:\n$unexpected"
+		fail "$(printf 'Unexpected build changes:\n%s' "$unexpected")"
 	fi
 
 	say "Running repository checks"
 	node scripts/check-lockfile-commit.mjs
 	npm run check
-	unexpected="$(git diff --name-only)"
+	unexpected="$(unexpected_changes)"
 	if [[ -n "$unexpected" ]]; then
-		abort_merge
-		die "Repository checks modified tracked files:\n$unexpected"
+		fail "$(printf 'Repository checks modified tracked files:\n%s' "$unexpected")"
 	fi
 
 	say "Running focused fork checks"
@@ -136,12 +160,14 @@ fi
 trap - ERR INT TERM
 
 if [[ "$DO_PUSH" -eq 1 ]]; then
-	git push origin local
+	git push --atomic origin main:main local:local
 fi
 
 say "Done"
 if [[ "$already_current" -eq 0 ]]; then
 	echo "local now contains upstream/main plus the fork patches. Backup: $backup"
-else
+elif [[ "$DO_TEST" -eq 1 ]]; then
 	echo "local was already current and passed build/check validation."
+else
+	echo "local was already current; build/check validation was skipped (--no-test)."
 fi

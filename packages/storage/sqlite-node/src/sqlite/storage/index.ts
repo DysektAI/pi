@@ -4,7 +4,7 @@ import type {
 	SessionStorage,
 	SessionTreeEntry,
 } from "@earendil-works/pi-agent-core";
-import { SessionError } from "@earendil-works/pi-agent-core";
+import { advanceCompactionTraversal, SessionError } from "@earendil-works/pi-agent-core";
 import { uuidv7 } from "@earendil-works/pi-ai";
 import type { SqliteDatabase, SqliteSessionMetadata } from "../types.ts";
 import { getMaterializedBranchPathOrCompaction } from "./branch-entries.ts";
@@ -130,12 +130,9 @@ export class SqliteSessionStorage implements SessionStorage<SqliteSessionMetadat
 		if (!current) throw new SessionError("not_found", `Entry ${leafId} not found`);
 		while (current) {
 			path.unshift(current);
-			if (stopAtEntryId !== null && current.id === stopAtEntryId) break;
-			if (current.type === "compaction") {
-				if (current.retainedTail) break;
-				stopAtEntryId = current.firstKeptEntryId ?? null;
-			}
-			if (!current.parentId) break;
+			const traversal = advanceCompactionTraversal(current, stopAtEntryId);
+			stopAtEntryId = traversal.stopAtEntryId;
+			if (traversal.stop || !current.parentId) break;
 			const parent = await this.getEntry(current.parentId);
 			if (!parent) throw new SessionError("invalid_session", `Entry ${current.parentId} not found`);
 			current = parent;
