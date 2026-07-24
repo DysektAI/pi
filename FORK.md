@@ -30,10 +30,11 @@ never falls back to the upstream package feed.
 For that source installation, `pi update --self` performs the consumer update:
 
 1. Fetch `origin/local` into `refs/remotes/origin/local`.
-2. Switch to `local` (creating its tracking branch when necessary).
-3. Fast-forward `local` to `origin/local`.
-4. Run `npm ci --ignore-scripts` at the repository root.
-5. Rebuild the monorepo.
+2. Create `local` tracking `origin/local` if it does not exist (restricted-refspec clones).
+3. Switch to `local`.
+4. Fast-forward `local` to `origin/local` (fails safely if `local` has diverged).
+5. Run `npm ci --ignore-scripts` at the repository root.
+6. Rebuild the monorepo.
 
 This source-checkout path is supported on Windows, macOS, and Linux when Git,
 Node.js, and npm are available. It does not run `fork-sync.sh`, merge

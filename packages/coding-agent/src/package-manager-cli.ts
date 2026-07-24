@@ -154,8 +154,9 @@ Examples:
 Update pi, installed packages, or model catalogs.
 
 DysektAI fork source checkouts check only the latest DysektAI/pi release and
-self-update by fetching origin/local, switching to local, fast-forwarding, and
-rebuilding the checkout. Package-manager installs use the upstream package feed.
+self-update by fetching origin/local, switching to local, fast-forwarding
+(fails safely if local has diverged), and rebuilding the checkout.
+Package-manager installs use the upstream package feed.
 
 Options:
   --self                  Update pi only (default when no target is given)

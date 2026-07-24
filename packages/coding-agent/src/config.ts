@@ -224,25 +224,22 @@ function getSelfUpdateCommandForMethod(
 				"origin",
 				"local:refs/remotes/origin/local",
 			]);
-			// `git checkout -B` creates local from origin/local when absent
-			// (needed for restricted-refspec clones) and resets it to
-			// origin/local otherwise. Self-update only runs when a newer
-			// release was detected, and the exclusive fork release channel
-			// guarantees origin/local is the intended fast-forward target.
-			const switchBranch = makeSelfUpdateCommandStep("git", [
-				"-C",
-				repoRoot,
-				"checkout",
-				"-B",
-				"local",
-				"origin/local",
+			// Create local tracking origin/local when absent (restricted-refspec
+			// clones). The shell wrapper always exits 0 so an existing branch
+			// does not block the update. The subsequent merge --ff-only is the
+			// safety check that prevents discarding local-only commits.
+			const ensureBranch = makeSelfUpdateCommandStep("sh", [
+				"-c",
+				`git -C '${repoRoot.replaceAll("'", "'\\''")}' branch --track local origin/local 2>/dev/null; exit 0`,
 			]);
+			const switchBranch = makeSelfUpdateCommandStep("git", ["-C", repoRoot, "switch", "local"]);
+			const update = makeSelfUpdateCommandStep("git", ["-C", repoRoot, "merge", "--ff-only", "origin/local"]);
 			const install = makeSelfUpdateCommandStep("npm", ["--prefix", repoRoot, "ci", "--ignore-scripts"]);
 			const build = makeSelfUpdateCommandStep("npm", ["--prefix", repoRoot, "run", "build"]);
 			return {
 				...fetch,
-				display: [fetch, switchBranch, install, build].map((step) => step.display).join(" && "),
-				steps: [fetch, switchBranch, install, build],
+				display: [fetch, switchBranch, update, install, build].map((step) => step.display).join(" && "),
+				steps: [fetch, ensureBranch, switchBranch, update, install, build],
 			};
 		}
 		case "unknown":

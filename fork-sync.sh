@@ -59,9 +59,9 @@ restore_checkout() {
 	abort_merge
 	if [[ "$already_current" -eq 1 ]]; then
 		git restore --source="$INITIAL_HEAD" --staged --worktree -- . >/dev/null 2>&1 || true
-		# Remove untracked artifacts (build outputs, model catalogs) that
-		# a failed validation may have created. The script verified the
-		# tree was clean of non-ignored files before starting.
+		# Clean untracked build artifacts from the failed validation.
+		# The script verified a clean non-ignored tree before starting;
+		# any new untracked files were created by the build/check phase.
 		git clean -fd -- . >/dev/null 2>&1 || true
 	fi
 }
